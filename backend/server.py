@@ -1,0 +1,152 @@
+"""后端入口：FastAPI 应用 + 适老端 WS 网关 + 子女端 HTTP API + 静态前端。
+
+适老端 WS：/ws/elder/{elder_id}
+  - 二进制消息 = 上行 PCM 音频
+  - 文本消息(JSON) = 控制信令（hangup 等）
+记忆与信号模块在 L3/L4 接入；此处通过依赖注入挂载回调，缺省为空实现。
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
+from .config import load_config
+from .engine.factory import create_engine
+from .memory import MemoryService, MemoryStore
+from .signals import SignalService
+from .api import parent as parent_api
+from .session.manager import ConversationSession
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("gateway")
+
+cfg = load_config()
+app = FastAPI(title="老年陪伴语音 Agent 后端")
+
+# L3 分层记忆服务（层级 A/B 读写 + 异步蒸馏）
+_memory_store = MemoryStore(cfg.db_path)
+_memory = MemoryService(_memory_store, cfg.ark)
+# L4 子女端信号服务（规则引擎 + 隐私友好摘要）
+_signals = SignalService(cfg.db_path, cfg.ark)
+parent_api.bind(_memory_store, _signals)
+app.include_router(parent_api.router)
+
+
+def _probe_volc_ready() -> bool:
+    """探测火山语音凭证是否就绪：读 property 触发惰性校验，缺失会抛 RuntimeError。"""
+    try:
+        return bool(cfg.volc.app_id and cfg.volc.access_token)
+    except RuntimeError:
+        return False
+
+
+@app.on_event("startup")
+async def _init_db() -> None:
+    await _memory_store.ensure_schema()
+    await _signals.ensure_schema()
+
+
+@app.on_event("startup")
+async def _check_credentials() -> None:
+    """凭证 fail-fast：启动时尽早暴露 seeduplex 缺凭证问题，但不崩进程，
+    以便 /healthz 仍可访问、供运维定位（volc_ready=false）。"""
+    if cfg.engine == "seeduplex" and not _probe_volc_ready():
+        logger.error(
+            "引擎=seeduplex 但缺少火山语音凭证（VOLC_APP_ID / VOLC_ACCESS_TOKEN），"
+            "语音链路将无法建连。请在根目录 .env 配置后重启；/healthz 将标记 volc_ready=false。"
+        )
+
+
+def _on_session_end(elder_id: str):
+    """会话结束钩子：异步触发蒸馏 + 信号生成，立即返回不阻塞（PRD 8.2 解耦）。"""
+
+    async def _handler(transcript: list) -> None:
+        asyncio.create_task(_memory.distill(elder_id, transcript))
+        asyncio.create_task(_signals.generate(elder_id, transcript))
+
+    return _handler
+
+
+@app.websocket("/ws/elder/{elder_id}")
+async def elder_ws(ws: WebSocket, elder_id: str) -> None:
+    await ws.accept()
+    logger.info("适老端接入 elder_id=%s", elder_id)
+
+    async def client_send(msg: bytes | str) -> None:
+        if isinstance(msg, bytes):
+            await ws.send_bytes(msg)
+        else:
+            await ws.send_text(msg)
+
+    session = ConversationSession(
+        elder_id=elder_id,
+        engine=create_engine(cfg),
+        client_send=client_send,
+        context_provider=lambda: _memory.build_context(elder_id),
+        on_turn_text=None,
+        on_session_end=_on_session_end(elder_id),
+    )
+
+    try:
+        await session.start()
+    except Exception as exc:  # 建连失败：友好提示后关闭
+        logger.exception("会话启动失败")
+        await client_send('{"type":"status","status":"error","detail":"connect_failed"}')
+        await ws.close()
+        return
+
+    recv_task = asyncio.create_task(session.run_until_end())
+    try:
+        while True:
+            message = await ws.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            if (data := message.get("bytes")) is not None:
+                await session.push_audio(data)
+            elif (text := message.get("text")) is not None:
+                await session.handle_client_text(text)
+    except WebSocketDisconnect:
+        logger.info("适老端断开 elder_id=%s", elder_id)
+    finally:
+        await session.stop()
+        recv_task.cancel()
+
+
+@app.get("/healthz")
+async def healthz() -> dict:
+    """健康检查：除存活外，给出引擎与两套凭证的分项就绪状态，便于运维定位。
+
+    volc_ready：语音链路凭证（VOLC_*）是否就绪，仅 seeduplex 引擎下有意义。
+    ark_enabled：方舟文本链路是否启用（缺 key 时降级为规则，不影响存活）。
+    """
+    volc_ready = _probe_volc_ready()
+    degraded = cfg.engine == "seeduplex" and not volc_ready
+    return {
+        "status": "degraded" if degraded else "ok",
+        "engine": cfg.engine,
+        "volc_ready": volc_ready,
+        "ark_enabled": cfg.ark.enabled,
+        "model": cfg.volc.model_version,
+        "speaker": cfg.volc.speaker,
+    }
+
+
+_WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+if (_WEB_DIR / "elder").exists():
+    app.mount("/elder", StaticFiles(directory=str(_WEB_DIR / "elder"), html=True), name="elder")
+if (_WEB_DIR / "parent").exists():
+    app.mount("/parent", StaticFiles(directory=str(_WEB_DIR / "parent"), html=True), name="parent")
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run("backend.server:app", host=cfg.host, port=cfg.port, reload=False)
+
+
+if __name__ == "__main__":
+    main()

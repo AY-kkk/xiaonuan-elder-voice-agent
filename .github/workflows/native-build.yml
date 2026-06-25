@@ -1,0 +1,49 @@
+# 三端编译门禁（R1）：每次改动 app/** 自动编译 Android APK 与 iOS framework，
+# 红灯即拦截合并。强制 KMP expect/actual 与 iOS cinterop 的正确性在编译期被验证。
+#
+# 注：本仓库尚未提交 gradle wrapper 的 gradlew 脚本与 gradle-wrapper.jar
+# （仅有 gradle/wrapper/gradle-wrapper.properties，声明 Gradle 8.9）。
+# 故此处用官方 gradle/actions/setup-gradle 提供 gradle 8.9 可执行，直接调用 gradle，
+# 而非 ./gradlew。补全 wrapper（本机 `gradle wrapper --gradle-version 8.9`）后可改回 ./gradlew。
+name: native-build
+
+on:
+  push:
+    paths: ['app/**']
+  pull_request:
+    paths: ['app/**']
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Assemble Android debug（验证 commonMain + Android actual 编译）
+        working-directory: app
+        run: gradle :composeApp:assembleDebug --stacktrace
+      - name: Run common unit tests（控制帧契约单测）
+        working-directory: app
+        run: gradle :composeApp:testDebugUnitTest --stacktrace
+
+  ios-framework:
+    runs-on: macos-14   # 自带 Xcode，提供 iOS cinterop 工具链
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Link iOS framework（含 cinterop 编译，验证 iOS actual）
+        working-directory: app
+        run: gradle :composeApp:linkDebugFrameworkIosSimulatorArm64 --stacktrace

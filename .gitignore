@@ -1,0 +1,27 @@
+# ---- 凭证 / 隐私（绝不入库）----
+.env
+backend/memory.db
+backend/certs/
+
+# ---- Python ----
+.venv/
+__pycache__/
+*.pyc
+
+# ---- KMP / Gradle 构建产物 ----
+# 注意：gradle/wrapper/gradle-wrapper.jar 必须入库（CI 依赖），不要用 *.jar 规则
+.gradle/
+app/.gradle/
+app/build/
+app/composeApp/build/
+.kotlin/
+app/.kotlin/
+local.properties
+
+# ---- iOS / Xcode ----
+app/iosApp/build/
+*.xcuserstate
+xcuserdata/
+
+# ---- 系统 ----
+.DS_Store

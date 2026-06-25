@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>家人关怀 · 子女端</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f5f6f8; color: #1f2329; line-height: 1.5;
+      max-width: 640px; margin: 0 auto; padding: 16px;
+    }
+    h1 { font-size: 20px; margin: 8px 0 16px; }
+    h2 { font-size: 16px; margin: 24px 0 12px; color: #4e5969; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 12px; }
+    .signal { border-left: 4px solid #c9cdd4; }
+    .signal.attention { border-left-color: #ff9a2e; }
+    .signal.urgent { border-left-color: #f53f3f; background: #fff2f0; }
+    .signal .meta { font-size: 12px; color: #86909c; margin-bottom: 4px; }
+    .signal .summary { font-size: 15px; }
+    .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; margin-left: 6px; }
+    .badge.normal { background: #e8f3ff; color: #165dff; }
+    .badge.attention { background: #fff7e8; color: #ff7d00; }
+    .badge.urgent { background: #ffece8; color: #f53f3f; }
+    .fact { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f1f3; }
+    .fact:last-child { border-bottom: none; }
+    .fact .tag { font-size: 12px; background: #f2f3f5; color: #4e5969; padding: 1px 8px; border-radius: 8px; margin-right: 8px; }
+    .fact .src { font-size: 11px; color: #c9cdd4; margin-left: 6px; }
+    .fact button { border: none; background: none; color: #f53f3f; cursor: pointer; font-size: 13px; }
+    form { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    select, input { padding: 8px; border: 1px solid #e5e6eb; border-radius: 8px; font-size: 14px; }
+    input { flex: 1; min-width: 140px; }
+    button.add { background: #165dff; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; }
+    .empty { color: #c9cdd4; font-size: 14px; padding: 8px 0; }
+    .privacy { font-size: 12px; color: #86909c; margin-top: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>家人关怀 · 子女端</h1>
+
+  <h2>每日信号摘要</h2>
+  <div id="signals"><div class="empty">加载中…</div></div>
+
+  <h2>重点事项（会主动关照老人）</h2>
+  <div class="card">
+    <div id="facts"><div class="empty">加载中…</div></div>
+    <form id="fact-form">
+      <select id="cat"></select>
+      <input id="content" placeholder="如：每天早上提醒吃降压药" maxlength="200" />
+      <button class="add" type="submit">添加</button>
+    </form>
+  </div>
+
+  <p class="privacy">隐私保护：本页只展示结论性信号与您设置的事项，绝不展示老人的原始对话内容。</p>
+
+  <script>
+    const ELDER_ID = "elder-001";
+    const api = (p) => `/api/parent/${p}`;
+
+    async function loadCategories() {
+      const r = await fetch(api("categories")).then((x) => x.json());
+      document.getElementById("cat").innerHTML = r.categories.map((c) => `<option>${c}</option>`).join("");
+    }
+
+    async function loadSignals() {
+      const box = document.getElementById("signals");
+      try {
+        const { items } = await fetch(api(`${ELDER_ID}/signals`)).then((x) => x.json());
+        if (!items.length) { box.innerHTML = '<div class="card empty">暂无信号，老人开始对话后会自动生成。</div>'; return; }
+        box.innerHTML = items.map((s) => `
+          <div class="card signal ${s.level}">
+            <div class="meta">${fmtTime(s.created_at)}<span class="badge ${s.level}">${levelText(s.level)}</span></div>
+            <div class="summary">${escapeHtml(s.summary)}</div>
+          </div>`).join("");
+      } catch (e) { box.innerHTML = '<div class="card empty">加载失败</div>'; }
+    }
+
+    async function loadFacts() {
+      const box = document.getElementById("facts");
+      try {
+        const { items } = await fetch(api(`${ELDER_ID}/key_facts`)).then((x) => x.json());
+        if (!items.length) { box.innerHTML = '<div class="empty">还没有重点事项，添加一条试试。</div>'; return; }
+        box.innerHTML = items.map((f) => `
+          <div class="fact">
+            <div><span class="tag">${escapeHtml(f.category)}</span>${escapeHtml(f.content)}
+              <span class="src">${f.source === "parent" ? "我设置的" : "对话识别"}</span></div>
+            <button data-id="${f.id}">删除</button>
+          </div>`).join("");
+        box.querySelectorAll("button[data-id]").forEach((b) =>
+          b.addEventListener("click", () => deleteFact(b.dataset.id)));
+      } catch (e) { box.innerHTML = '<div class="empty">加载失败</div>'; }
+    }
+
+    async function addFact(e) {
+      e.preventDefault();
+      const category = document.getElementById("cat").value;
+      const content = document.getElementById("content").value.trim();
+      if (!content) return;
+      await fetch(api(`${ELDER_ID}/key_facts`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, content }),
+      });
+      document.getElementById("content").value = "";
+      loadFacts();
+    }
+
+    async function deleteFact(id) {
+      await fetch(api(`${ELDER_ID}/key_facts/${id}`), { method: "DELETE" });
+      loadFacts();
+    }
+
+    function levelText(l) { return { normal: "正常", attention: "需关注", urgent: "紧急" }[l] || l; }
+    function fmtTime(ts) { return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false }); }
+    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+    document.getElementById("fact-form").addEventListener("submit", addFact);
+    loadCategories().then(loadFacts);
+    loadSignals();
+  </script>
+</body>
+</html>

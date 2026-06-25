@@ -1,0 +1,32 @@
+# 后端测试门禁（R3/R5）：每次改动 backend/** 跑全部离线测试，红灯即拦截合并。
+# 这些测试不依赖网络/凭证/外部 LLM（强制关闭方舟、纯规则与静态扫描），CI 可稳定复现。
+#
+# 阻断项含义：
+#   - 隐私回归（R3）：任何让原始对话入库/外发的回归在此被拦截（PRD 护栏指标=0）。
+#   - 协议契约（R5）：manager.py 的控制帧 type 与 docs/protocol.md 不一致即失败。
+name: backend-test
+
+on:
+  push:
+    paths: ['backend/**', 'docs/protocol.md']
+  pull_request:
+    paths: ['backend/**', 'docs/protocol.md']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r backend/requirements.txt
+      - name: 隐私回归（阻断项 · R3）
+        run: python -m backend.scripts.test_privacy
+      - name: 信号自测
+        run: python -m backend.scripts.test_signals
+      - name: 控制帧契约（阻断项 · R5）
+        run: python -m backend.scripts.test_protocol_contract
+      - name: 底层协议编解码自测
+        run: python -m backend.scripts.test_protocol
