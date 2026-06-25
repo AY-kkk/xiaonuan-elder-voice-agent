@@ -11,6 +11,7 @@ on:
     paths: ['backend/**', 'docs/protocol.md']
   pull_request:
     paths: ['backend/**', 'docs/protocol.md']
+  workflow_dispatch:   # 允许在 Actions 页面手动触发（首跑/重跑）
 
 jobs:
   test:
