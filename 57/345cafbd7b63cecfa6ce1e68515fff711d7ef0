@@ -1,0 +1,156 @@
+app/composeApp/src/iosMain/kotlin/com/elder/companion/audio/AudioCapture.ios.kt
+  s_6575adff03d073::t_cc29ab76d1c38f 16 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3ded5d28af3784ffc8446b","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":16}]}]}
+  s_6575adff03d073::t_15ed3383807dfb 54 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3ded7428af3784ffc8446e","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":54}]}]}
+app/composeApp/src/iosMain/kotlin/com/elder/companion/audio/AudioPlayer.ios.kt
+  s_6575adff03d073::t_c91bd515448f97 33 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3ded5228af3784ffc84468","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":33}]}]}
+  s_6575adff03d073::t_297e8d4c63f888 5,9 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3ded4128af3784ffc84465","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":5},{"Single":9}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "57345cafbd7b63cecfa6ce1e68515fff711d7ef0",
+  "prompts": {},
+  "sessions": {
+    "s_6575adff03d073": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a3a718628af3784ffc84076",
+        "model": "openrouter-3o__dev"
+      },
+      "human_author": "unknown"
+    }
+  },
+  "attestation_metadata": {
+    "app/composeApp/src/iosMain/kotlin/com/elder/companion/audio/AudioCapture.ios.kt": [
+      {
+        "hash": "s_6575adff03d073::t_cc29ab76d1c38f",
+        "line_ranges": [
+          {
+            "Single": 16
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3ded5d28af3784ffc8446b",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 16
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "hash": "s_6575adff03d073::t_15ed3383807dfb",
+        "line_ranges": [
+          {
+            "Single": 54
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3ded7428af3784ffc8446e",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 54
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "app/composeApp/src/iosMain/kotlin/com/elder/companion/audio/AudioPlayer.ios.kt": [
+      {
+        "hash": "s_6575adff03d073::t_c91bd515448f97",
+        "line_ranges": [
+          {
+            "Single": 33
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3ded5228af3784ffc84468",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 33
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "hash": "s_6575adff03d073::t_297e8d4c63f888",
+        "line_ranges": [
+          {
+            "Single": 5
+          },
+          {
+            "Single": 9
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3ded4128af3784ffc84465",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 5
+              },
+              {
+                "Single": 9
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "s_6575adff03d073": {
+      "tool": "trae",
+      "conversation_id": "6a3a718628af3784ffc84076",
+      "session_id": "6a3a718628af3784ffc84076",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_6575adff03d073::t_15ed3383807dfb": {
+      "tool": "trae",
+      "conversation_id": "6a3a718628af3784ffc84076",
+      "session_id": "6a3a718628af3784ffc84076",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_6575adff03d073::t_297e8d4c63f888": {
+      "tool": "trae",
+      "conversation_id": "6a3a718628af3784ffc84076",
+      "session_id": "6a3a718628af3784ffc84076",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_6575adff03d073::t_c91bd515448f97": {
+      "tool": "trae",
+      "conversation_id": "6a3a718628af3784ffc84076",
+      "session_id": "6a3a718628af3784ffc84076",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_6575adff03d073::t_cc29ab76d1c38f": {
+      "tool": "trae",
+      "conversation_id": "6a3a718628af3784ffc84076",
+      "session_id": "6a3a718628af3784ffc84076",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
