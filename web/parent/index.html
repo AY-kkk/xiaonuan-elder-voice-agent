@@ -54,9 +54,12 @@
 
   <p class="privacy">隐私保护：本页只展示结论性信号与您设置的事项，绝不展示老人的原始对话内容。</p>
 
+  <script src="./config.js"></script>
   <script>
     const ELDER_ID = "elder-001";
-    const api = (p) => `/api/parent/${p}`;
+    // API_BASE 为空=同源；非空=分离部署时的后端地址（不带末尾斜杠）。
+    const API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
+    const api = (p) => `${API_BASE}/api/parent/${p}`;
 
     async function loadCategories() {
       const r = await fetch(api("categories")).then((x) => x.json());

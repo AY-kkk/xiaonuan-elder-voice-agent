@@ -11,6 +11,7 @@ import asyncio
 import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -26,6 +27,16 @@ logger = logging.getLogger("gateway")
 
 cfg = load_config()
 app = FastAPI(title="老年陪伴语音 Agent 后端")
+
+# 前后端分离部署时放行跨域（CORS_ALLOW_ORIGINS 配置；留空=同源托管，不挂中间件最安全）
+if cfg.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(cfg.cors_origins),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # L3 分层记忆服务（层级 A/B 读写 + 异步蒸馏）
 _memory_store = MemoryStore(cfg.db_path)

@@ -78,6 +78,12 @@ class AppConfig:
     port: int = field(default_factory=lambda: int(_get("PORT", "8000")))
     engine: str = field(default_factory=lambda: _get("VOICE_ENGINE", "seeduplex").lower())
     db_path: str = field(default_factory=lambda: _get("DB_PATH") or str(_PROJECT_ROOT / "backend" / "memory.db"))
+    # 跨域放行源（前后端分离部署时填，逗号分隔；留空=不额外放行，同源托管最安全）
+    cors_origins: tuple = field(
+        default_factory=lambda: tuple(
+            o.strip() for o in _get("CORS_ALLOW_ORIGINS").split(",") if o.strip()
+        )
+    )
     volc: VolcConfig = field(default_factory=VolcConfig)
     ark: ArkConfig = field(default_factory=ArkConfig)
 

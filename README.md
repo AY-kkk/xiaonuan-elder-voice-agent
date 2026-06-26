@@ -29,20 +29,64 @@ docs/       protocol.md —— 客户端↔后端控制帧协议单一真源
 .github/    CI 门禁（native-build 三端编译 + backend-test 离线测试）
 ```
 
-## 本地运行（后端）
+## 🚀 快速开始（即填即用）
+
+### 方式一：一键启动（推荐，零凭证即可跑）
 
 ```bash
-cp .env.example .env   # 填入 VOLC_* 与可选 ARK_API_KEY
-pip install -r backend/requirements.txt
-python -m backend.server
+./run.sh
+```
+
+脚本会自动：建虚拟环境 → 装依赖 → （首次）从 `.env.example` 复制 `.env` → 用 **fake 引擎**零凭证启动整条链路。启动后打开：
+
+- 老人端：http://127.0.0.1:8000/elder/
+- 子女端：http://127.0.0.1:8000/parent/
+
+> fake 模式用脚本化对话模拟语音链路，无需任何 API 凭证，用于体验/联调全流程。
+
+### 方式二：接真实火山语音
+
+1. **填 API 凭证** —— 编辑项目根目录 `.env`，只需填两行（在火山语音控制台获取）：
+
+   ```ini
+   VOLC_APP_ID=你的AppID
+   VOLC_ACCESS_TOKEN=你的AccessToken
+   ```
+
+   > 👉 **这就是唯一必填的 API 配置位置**。其余变量保持默认即可。
+   > 选填：`ARK_API_KEY` 填了能让记忆/信号摘要更自然，留空自动降级为规则，不影响通话。
+
+2. **启动**：
+
+   ```bash
+   ./run.sh --real
+   ```
+
+### 手动启动（不想用脚本时）
+
+```bash
+cp .env.example .env                      # 首次：复制配置模板
+pip install -r backend/requirements.txt   # 装依赖
+VOICE_ENGINE=fake python -m backend.server  # fake 模式；接真实语音去掉前缀并填好 .env
 ```
 
 健康检查 `GET /healthz` 返回引擎与两套凭证的分项就绪状态（`engine` / `volc_ready` / `ark_enabled`）。
 
+## 前后端分离部署（选填）
+
+默认后端用 `StaticFiles` 同源托管两个前端，无需任何额外配置。若要把前端单独部署到别的域名：
+
+1. 后端 `.env` 填 `CORS_ALLOW_ORIGINS=https://你的前端域名`（逗号分隔多个）。
+2. 前端 [`web/elder/config.js`](web/elder/config.js) 与 [`web/parent/config.js`](web/parent/config.js) 把 `API_BASE` 填成后端地址（不带末尾斜杠）。
+
+留空即同源，二者互不影响。
+
 ## 测试
 
 ```bash
+python -m backend.scripts.test_e2e                # 端到端（fake 引擎跑通全链路）
 python -m backend.scripts.test_privacy            # 隐私回归（阻断项）
+python -m backend.scripts.test_session_isolation  # 多会话隔离（防串线阻断项）
 python -m backend.scripts.test_protocol_contract  # 控制帧契约（与 docs/protocol.md 一致）
 python -m backend.scripts.test_signals
 ```

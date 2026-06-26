@@ -31,6 +31,13 @@ function showText(role, text) {
 }
 
 function wsUrl() {
+  // API_BASE 为空=同源；非空=分离部署，从配置地址推导 ws/wss 与 host。
+  const base = (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
+  if (base) {
+    const u = new URL(base);
+    const proto = u.protocol === "https:" ? "wss" : "ws";
+    return `${proto}://${u.host}/ws/elder/${ELDER_ID}`;
+  }
   const proto = location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${location.host}/ws/elder/${ELDER_ID}`;
 }
