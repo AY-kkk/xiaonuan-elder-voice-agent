@@ -35,7 +35,9 @@ fun App() {
         CallScreen(
             uiState = uiState,
             onToggle = {
-                val live = uiState.state == CallState.LIVE || uiState.state == CallState.CONNECTING
+                val live = uiState.state == CallState.LIVE ||
+                    uiState.state == CallState.CONNECTING ||
+                    uiState.state == CallState.RECONNECTING
                 if (live) controller.hangup() else controller.start()
             },
         )

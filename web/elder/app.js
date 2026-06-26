@@ -19,6 +19,9 @@ const VAD_RMS_THRESHOLD = 0.04;
 const VAD_TRIGGER_FRAMES = 4; // 连续 4 帧 ≈ 80ms 才算开口，过滤瞬时噪声
 let vadVoiceFrames = 0;
 let bargedLocally = false; // 本轮已本地打断，避免重复 clear
+// 音频门闩（precise stop chain）：打断后关闸丢弃在途旧轮残尾，
+// 直到下一帧文本（新一轮回复开始）才重新开闸。开闸信号用可靠的文本帧而非乱序音频帧。
+let acceptingAudio = true;
 
 function setStatus(text) { statusEl.textContent = text; }
 function showText(role, text) {
@@ -69,22 +72,31 @@ async function start() {
 
 function onMessage(e) {
   if (e.data instanceof ArrayBuffer) {
-    player.enqueue(e.data); // 下行 TTS 音频
-    bargedLocally = false; // 新一轮回复开始，允许再次本地打断
+    if (acceptingAudio) player.enqueue(e.data); // 关闸期间丢弃旧轮残尾
     return;
   }
   let msg;
   try { msg = JSON.parse(e.data); } catch (_) { return; }
   if (msg.type === "barge_in") {
-    player.clear(); // 服务端打断信号兜底：本地未触发时由此停播
-    bargedLocally = true;
+    interrupt(); // 服务端打断信号兜底：本地未触发时由此停播
   } else if (msg.type === "text") {
+    // 文本推进 = 新一轮回复开始：重新开闸并允许再次本地打断。
+    acceptingAudio = true;
+    bargedLocally = false;
     showText(msg.role, msg.text);
   } else if (msg.type === "status") {
     if (msg.status === "connected") setStatus("接通啦，您说话吧");
     else if (msg.status === "error") setStatus("出了点小问题，请再试一次");
     else if (msg.status === "ended") setStatus("已挂断");
   }
+}
+
+// 统一打断：停播 + 关音频门闩丢弃旧轮在途残尾。本地 VAD 与服务端 barge_in 共用。
+function interrupt() {
+  player.clear();
+  bargedLocally = true;
+  acceptingAudio = false;
+  vadVoiceFrames = 0;
 }
 
 // 本地 VAD：仅在 Agent 出声时生效；连续高能量帧达阈值即立刻停播。
@@ -96,9 +108,7 @@ function localVad(rms) {
   if (rms >= VAD_RMS_THRESHOLD) {
     vadVoiceFrames += 1;
     if (vadVoiceFrames >= VAD_TRIGGER_FRAMES) {
-      player.clear();
-      bargedLocally = true;
-      vadVoiceFrames = 0;
+      interrupt();
     }
   } else {
     vadVoiceFrames = 0;

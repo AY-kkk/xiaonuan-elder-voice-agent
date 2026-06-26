@@ -35,7 +35,10 @@ fun CallScreen(
     uiState: CallUiState,
     onToggle: () -> Unit,
 ) {
-    val live = uiState.state == CallState.LIVE || uiState.state == CallState.CONNECTING
+    // 连接中/通话中/重连中都视为"通话进行"，按钮显示挂断，让老人随时能主动结束。
+    val live = uiState.state == CallState.LIVE ||
+        uiState.state == CallState.CONNECTING ||
+        uiState.state == CallState.RECONNECTING
 
     Box(
         modifier = Modifier

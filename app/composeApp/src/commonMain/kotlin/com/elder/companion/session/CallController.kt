@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +31,12 @@ class CallController(
     private val serverHost: String,
     private val elderId: String = "elder-001",
 ) {
+    private companion object {
+        const val MAX_RECONNECT = 5            // 意外断开最多自动重连次数
+        const val BACKOFF_BASE_MS = 1000L      // 退避基数：1s、2s、4s…
+        const val BACKOFF_CAP_MS = 8000L       // 退避上限，避免老人久等
+    }
+
     private val scope = CoroutineScope(SupervisorJob())
     private val http = createHttpClient()
     private val ws = WsClient(http)
@@ -43,27 +50,57 @@ class CallController(
     private var recvJob: Job? = null
     private var sendJob: Job? = null
     private var bargedThisTurn = false
+    private var userHangup = false   // 区分主动挂断（不重连）与意外断开（重连）
+
+    // 音频门闩（precise stop chain）：打断后关闸，丢弃此刻仍在网络在途的"旧轮 TTS 残尾"，
+    // 直到收到下一帧文本（对话向前推进=新一轮回复开始）才重新开闸。
+    // 关键修复点：开闸信号从不可靠的"音频帧到达"改为可靠的"文本帧到达"——
+    // 否则旧轮残尾音频到达时会被误当作新一轮而继续播放并错误重置打断标志。
+    private var acceptingAudio = true
 
     /** 开始通话。 */
     fun start() {
         if (_ui.value.state == CallState.LIVE || _ui.value.state == CallState.CONNECTING) return
+        userHangup = false
         _ui.value = CallUiState(CallState.CONNECTING, hint = "正在连接…")
         player.prepare()
-
-        recvJob = scope.launch {
-            try {
-                ws.connect(wsUrl()).collect { handleIncoming(it) }
-            } catch (e: Exception) {
-                _ui.value = CallUiState(CallState.ERROR, hint = "连接出错了，请再试一次")
-            } finally {
-                cleanup()
-            }
-        }
+        recvJob = scope.launch { runConnectionLoop() }
         startCapture()
+    }
+
+    /**
+     * 连接生命周期循环：首连 + 意外断开后的退避自动重连。
+     * 借鉴 X-OmniClaw "failures converge and execution continues"——网络抖动不让老人手动重拨。
+     * 主动挂断(userHangup)或重试耗尽才真正结束。
+     */
+    private suspend fun runConnectionLoop() {
+        var attempt = 0
+        while (!userHangup) {
+            val gracefully = try {
+                ws.connect(wsUrl()).collect { handleIncoming(it) }
+                true  // 流正常结束 = 对端关闭
+            } catch (e: Exception) {
+                false // 连接异常断开
+            }
+            if (userHangup) break
+
+            attempt = if (gracefully) attempt else attempt + 1
+            // 正常结束（对端主动关闭，如会话 ended）不重连；仅异常断开才重连
+            if (gracefully || attempt > MAX_RECONNECT) break
+
+            val backoff = (BACKOFF_BASE_MS shl (attempt - 1)).coerceAtMost(BACKOFF_CAP_MS)
+            _ui.value = _ui.value.copy(state = CallState.RECONNECTING, hint = "网络不稳，正在重新连接…")
+            player.clear()
+            delay(backoff)
+            if (userHangup) break
+            _ui.value = _ui.value.copy(hint = "正在重新连接…（第 $attempt 次）")
+        }
+        cleanup()
     }
 
     /** 挂断：先发 hangup 信令，再清理本地。 */
     fun hangup() {
+        userHangup = true
         scope.launch {
             ws.sendText(ControlFrame.hangup())
             ws.close()
@@ -76,18 +113,23 @@ class CallController(
             capture.start().collect { frame ->
                 ws.sendAudio(frame.pcm)
                 if (vad.onFrame(frame.rms, player.isPlaying, bargedThisTurn)) {
-                    player.clear()
-                    bargedThisTurn = true
+                    interrupt() // 本地 VAD 抢跑打断
                 }
             }
         }
     }
 
+    /** 统一打断：停播 + 关音频门闩丢弃旧轮在途残尾。本地 VAD 与服务端 barge_in 共用。 */
+    private fun interrupt() {
+        player.clear()
+        bargedThisTurn = true
+        acceptingAudio = false
+    }
+
     private suspend fun handleIncoming(incoming: WsClient.Incoming) {
         when (incoming) {
             is WsClient.Incoming.Audio -> {
-                player.enqueue(incoming.pcm)
-                bargedThisTurn = false // 新一轮回复开始，允许再次本地打断
+                if (acceptingAudio) player.enqueue(incoming.pcm) // 关闸期间丢弃旧轮残尾
             }
             is WsClient.Incoming.Control -> applyControl(ControlFrame.parse(incoming.json))
         }
@@ -95,14 +137,17 @@ class CallController(
 
     private fun applyControl(frame: ServerFrame) {
         when (frame) {
-            is ServerFrame.BargeIn -> {
-                player.clear() // 服务端兜底：本地未触发时由此停播
-                bargedThisTurn = true
+            is ServerFrame.BargeIn -> interrupt() // 服务端兜底：本地未触发时由此停播
+            is ServerFrame.Text -> {
+                // 文本推进 = 新一轮回复开始：重新开闸并允许再次本地打断。
+                // 以可靠的文本帧而非易乱序的音频帧作为轮次边界。
+                acceptingAudio = true
+                bargedThisTurn = false
+                _ui.value = _ui.value.copy(
+                    subtitleRole = frame.role,
+                    subtitleText = frame.text,
+                )
             }
-            is ServerFrame.Text -> _ui.value = _ui.value.copy(
-                subtitleRole = frame.role,
-                subtitleText = frame.text,
-            )
             is ServerFrame.Status -> applyStatus(frame.status)
             ServerFrame.Unknown -> Unit
         }
@@ -122,13 +167,19 @@ class CallController(
         player.clear()
         vad.reset()
         bargedThisTurn = false
-        if (_ui.value.state == CallState.LIVE || _ui.value.state == CallState.CONNECTING) {
+        acceptingAudio = true
+        // 终态：主动挂断/对端正常结束 -> IDLE；重试耗尽的意外断开 -> ERROR。
+        val st = _ui.value.state
+        if (st == CallState.RECONNECTING) {
+            _ui.value = CallUiState(CallState.ERROR, hint = "网络断开了，请稍后再试")
+        } else if (st == CallState.LIVE || st == CallState.CONNECTING) {
             _ui.value = CallUiState(CallState.IDLE, hint = "已挂断")
         }
     }
 
     /** 释放全部资源（页面销毁时调用）。 */
     fun dispose() {
+        userHangup = true
         recvJob?.cancel()
         cleanup()
         player.release()
