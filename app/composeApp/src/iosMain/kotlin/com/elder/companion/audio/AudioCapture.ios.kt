@@ -7,13 +7,13 @@ import kotlinx.cinterop.value
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import platform.AVFAudio.AVAudioCommonFormat
 import platform.AVFAudio.AVAudioConverter
 import platform.AVFAudio.AVAudioConverterInputStatus_HaveData
 import platform.AVFAudio.AVAudioConverterInputStatus_NoDataNow
 import platform.AVFAudio.AVAudioEngine
 import platform.AVFAudio.AVAudioFormat
 import platform.AVFAudio.AVAudioPCMBuffer
+import platform.AVFAudio.AVAudioPCMFormatInt16
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
 import platform.AVFAudio.AVAudioSessionCategoryOptionDefaultToSpeaker
@@ -51,7 +51,7 @@ actual class AudioCapture actual constructor() {
 
         val hwFormat = input.outputFormatForBus(0u)
         val targetFormat = AVAudioFormat(
-            commonFormat = AVAudioCommonFormat.AVAudioPCMFormatInt16,
+            commonFormat = AVAudioPCMFormatInt16,
             sampleRate = TARGET_RATE,
             channels = 1u,
             interleaved = true,

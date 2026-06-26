@@ -2,10 +2,11 @@ package com.elder.companion.audio
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.get
-import platform.AVFAudio.AVAudioCommonFormat
+import kotlinx.cinterop.set
 import platform.AVFAudio.AVAudioEngine
 import platform.AVFAudio.AVAudioFormat
 import platform.AVFAudio.AVAudioPCMBuffer
+import platform.AVFAudio.AVAudioPCMFormatInt16
 import platform.AVFAudio.AVAudioPlayerNode
 
 /**
@@ -29,7 +30,7 @@ actual class AudioPlayer actual constructor() {
     actual fun prepare() {
         if (format != null) return
         val fmt = AVAudioFormat(
-            commonFormat = AVAudioCommonFormat.AVAudioPCMFormatInt16,
+            commonFormat = AVAudioPCMFormatInt16,
             sampleRate = SAMPLE_RATE,
             channels = 1u,
             interleaved = true,
