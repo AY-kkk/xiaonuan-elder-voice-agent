@@ -46,10 +46,26 @@ _SUMMARY_SYSTEM = (
 
 
 class SignalService:
-    def __init__(self, db_path: str, ark_cfg: ArkConfig) -> None:
+    def __init__(self, db_path: str, ark_cfg: ArkConfig, usage_store=None) -> None:
         self._db_path = db_path
         self._ark_cfg = ark_cfg
+        self._usage_store = usage_store
         self._ark = ArkTextClient(ark_cfg)
+
+    def _client_for(self, elder_id: str) -> ArkTextClient:
+        """为本次调用构造带用量上报的客户端（sink 闭包捕获 elder_id，避免并发串号）。"""
+        if not self._usage_store:
+            return self._ark
+
+        async def _sink(usage: dict) -> None:
+            await self._usage_store.record(
+                elder_id, "signal", self._ark_cfg.text_model,
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+                usage.get("total_tokens", 0),
+            )
+
+        return ArkTextClient(self._ark_cfg, usage_sink=_sink)
 
     async def ensure_schema(self) -> None:
         async with aiosqlite.connect(self._db_path) as db:
@@ -72,7 +88,7 @@ class SignalService:
             return None
         try:
             result = rules.analyze_text(transcript)
-            summary = await self._summarize(result)
+            summary = await self._summarize(elder_id, result)
             await self._persist(elder_id, result, summary)
             return {**result, "summary": summary}
         except Exception:
@@ -95,7 +111,7 @@ class SignalService:
                 out.append(item)
             return out
 
-    async def _summarize(self, result: dict) -> str:
+    async def _summarize(self, elder_id: str, result: dict) -> str:
         rule_summary = rules.build_summary(result)
         if not self._ark_cfg.enabled:
             return rule_summary
@@ -105,7 +121,7 @@ class SignalService:
                 "mood": result["mood"],
                 "mentions": result["mentions"],
             }
-            text = await self._ark.chat(
+            text = await self._client_for(elder_id).chat(
                 [
                     {"role": "system", "content": _SUMMARY_SYSTEM},
                     {"role": "user", "content": json.dumps(tags, ensure_ascii=False)},

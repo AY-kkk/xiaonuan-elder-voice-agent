@@ -84,6 +84,11 @@ class AppConfig:
             o.strip() for o in _get("CORS_ALLOW_ORIGINS").split(",") if o.strip()
         )
     )
+    # 方舟文本模型单价（元/百万 token），用于成本看板折算。默认按 doubao-seed-1-6-flash
+    # 公开价估算；实际以方舟控制台账单为准。仅用于展示，不影响计费。
+    ark_price_per_mtoken: float = field(
+        default_factory=lambda: float(_get("ARK_PRICE_PER_MTOKEN", "0.8"))
+    )
     volc: VolcConfig = field(default_factory=VolcConfig)
     ark: ArkConfig = field(default_factory=ArkConfig)
 

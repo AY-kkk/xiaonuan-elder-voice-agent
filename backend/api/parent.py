@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import time
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -13,17 +14,26 @@ from pydantic import BaseModel, Field
 
 from ..memory import KEY_FACT_CATEGORIES, MemoryStore
 from ..signals import SignalService
+from ..usage import UsageStore
 
 router = APIRouter(prefix="/api/parent", tags=["parent"])
 
 # 由 server.py 启动时注入（避免循环依赖与重复实例化）
 _store: Optional[MemoryStore] = None
 _signals: Optional[SignalService] = None
+_usage: Optional[UsageStore] = None
+_price_per_mtoken: float = 0.0
 
 
-def bind(store: MemoryStore, signals: SignalService) -> None:
-    global _store, _signals
-    _store, _signals = store, signals
+def bind(
+    store: MemoryStore,
+    signals: SignalService,
+    usage: UsageStore,
+    price_per_mtoken: float,
+) -> None:
+    global _store, _signals, _usage, _price_per_mtoken
+    _store, _signals, _usage = store, signals, usage
+    _price_per_mtoken = price_per_mtoken
 
 
 class KeyFactIn(BaseModel):
@@ -58,3 +68,22 @@ async def delete_key_fact(elder_id: str, fact_id: int) -> dict:
 @router.get("/{elder_id}/signals")
 async def get_signals(elder_id: str) -> dict:
     return {"items": await _signals.list_signals(elder_id)}
+
+
+@router.get("/{elder_id}/usage")
+async def get_usage(elder_id: str) -> dict:
+    """本月成本看板：把 token 用量折算成大白话的钱与关怀次数。
+
+    隐私：只读 usage_log（纯 token 计数），绝不涉及任何对话内容。
+    """
+    now = time.localtime()
+    month_start = time.mktime((now.tm_year, now.tm_mon, 1, 0, 0, 0, 0, 0, -1))
+    s = await _usage.summary(elder_id, since_ts=month_start)
+    cost_yuan = round(s["total_tokens"] / 1_000_000 * _price_per_mtoken, 2)
+    return {
+        "month": time.strftime("%Y-%m", now),
+        "calls": s["calls"],            # 本月关怀分析次数（蒸馏+信号）
+        "total_tokens": s["total_tokens"],
+        "cost_yuan": cost_yuan,         # 折算金额（展示用，以方舟账单为准）
+        "price_per_mtoken": _price_per_mtoken,
+    }

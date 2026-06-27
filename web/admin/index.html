@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>运维管理台 · 小暖</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", monospace; background: #0f1115; color: #d8dde6; padding: 24px; max-width: 980px; margin: 0 auto; }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    .hint { color: #6b7280; font-size: 13px; margin-bottom: 20px; }
+    .bar { display: flex; gap: 8px; margin-bottom: 24px; }
+    .bar input { flex: 1; background: #1a1d24; border: 1px solid #2a2f3a; color: #d8dde6; padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+    .bar button { background: #2563eb; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    h2 { font-size: 15px; color: #9aa4b2; margin: 22px 0 10px; border-left: 3px solid #2563eb; padding-left: 8px; }
+    .panel { background: #1a1d24; border: 1px solid #232833; border-radius: 10px; padding: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #232833; }
+    th { color: #6b7280; font-weight: 500; }
+    .tag { background: #232833; padding: 1px 8px; border-radius: 6px; font-size: 12px; }
+    .lv-normal { color: #4ade80; } .lv-attention { color: #fbbf24; } .lv-urgent { color: #f87171; }
+    .empty { color: #4b5563; padding: 8px 10px; font-size: 13px; }
+    .stat { display: flex; gap: 24px; }
+    .stat .n { font-size: 24px; font-weight: 700; color: #60a5fa; }
+    .stat .money { color: #4ade80; }
+    .stat .lbl { font-size: 12px; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <h1>运维管理台 · 小暖</h1>
+  <div class="hint">只读聚合视图。隐私边界：不存、不展示任何原始对话逐字稿，仅展示蒸馏后的结论数据。</div>
+
+  <div class="bar">
+    <input id="elder" value="elder-001" placeholder="输入 elder_id" />
+    <button id="load">查询</button>
+  </div>
+
+  <h2>用量与成本（本月）</h2>
+  <div class="panel"><div class="stat" id="usage"><div class="empty">—</div></div></div>
+
+  <h2>信号摘要</h2>
+  <div class="panel" id="signals"><div class="empty">—</div></div>
+
+  <h2>重点事项（层级 A）</h2>
+  <div class="panel" id="facts"><div class="empty">—</div></div>
+
+  <h2>生活记忆（层级 B）</h2>
+  <div class="panel" id="memories"><div class="empty">—</div></div>
+
+  <script src="./config.js"></script>
+  <script>
+    const API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const fmt = (ts) => new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false });
+    const j = (url) => fetch(`${API_BASE}${url}`).then((x) => x.json()).catch(() => null);
+
+    async function loadAll() {
+      const id = document.getElementById("elder").value.trim() || "elder-001";
+
+      const u = await j(`/api/parent/${id}/usage`);
+      document.getElementById("usage").innerHTML = u
+        ? `<div><div class="n money">¥${u.cost_yuan.toFixed(2)}</div><div class="lbl">${u.month} 预估</div></div>
+           <div><div class="n">${u.calls}</div><div class="lbl">调用次数</div></div>
+           <div><div class="n">${u.total_tokens}</div><div class="lbl">总 token</div></div>`
+        : '<div class="empty">加载失败</div>';
+
+      const sig = await j(`/api/parent/${id}/signals`);
+      const sBox = document.getElementById("signals");
+      if (sig && sig.items.length) {
+        sBox.innerHTML = `<table><tr><th>时间</th><th>等级</th><th>心情</th><th>摘要</th></tr>` +
+          sig.items.map((s) => `<tr><td>${fmt(s.created_at)}</td><td class="lv-${s.level}">${s.level}</td><td>${esc(s.mood)}</td><td>${esc(s.summary)}</td></tr>`).join("") + `</table>`;
+      } else sBox.innerHTML = '<div class="empty">无信号</div>';
+
+      const f = await j(`/api/parent/${id}/key_facts`);
+      const fBox = document.getElementById("facts");
+      if (f && f.items.length) {
+        fBox.innerHTML = `<table><tr><th>分类</th><th>内容</th><th>来源</th><th>更新</th></tr>` +
+          f.items.map((x) => `<tr><td><span class="tag">${esc(x.category)}</span></td><td>${esc(x.content)}</td><td>${x.source === "parent" ? "子女预设" : "对话识别"}</td><td>${fmt(x.updated_at)}</td></tr>`).join("") + `</table>`;
+      } else fBox.innerHTML = '<div class="empty">无重点事项</div>';
+
+      const m = await j(`/api/elder/${id}/memories`);
+      const mBox = document.getElementById("memories");
+      if (m && m.items.length) {
+        mBox.innerHTML = `<table>` + m.items.map((x) => `<tr><td>${esc(x)}</td></tr>`).join("") + `</table>`;
+      } else mBox.innerHTML = '<div class="empty">无生活记忆</div>';
+    }
+
+    document.getElementById("load").addEventListener("click", loadAll);
+    loadAll();
+  </script>
+</body>
+</html>

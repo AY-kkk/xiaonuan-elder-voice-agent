@@ -38,10 +38,26 @@ _DISTILL_SYSTEM = (
 
 
 class MemoryService:
-    def __init__(self, store: MemoryStore, ark_cfg: ArkConfig) -> None:
+    def __init__(self, store: MemoryStore, ark_cfg: ArkConfig, usage_store=None) -> None:
         self._store = store
         self._ark_cfg = ark_cfg
+        self._usage_store = usage_store
         self._ark = ArkTextClient(ark_cfg)
+
+    def _client_for(self, elder_id: str) -> ArkTextClient:
+        """为本次调用构造带用量上报的客户端（sink 闭包捕获 elder_id，避免并发串号）。"""
+        if not self._usage_store:
+            return self._ark
+
+        async def _sink(usage: dict) -> None:
+            await self._usage_store.record(
+                elder_id, "distill", self._ark_cfg.text_model,
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+                usage.get("total_tokens", 0),
+            )
+
+        return ArkTextClient(self._ark_cfg, usage_sink=_sink)
 
     async def build_context(self, elder_id: str) -> Tuple[str, list]:
         """组装注入 StartSession 的 system_prompt 与 dialog_context。"""
@@ -70,7 +86,7 @@ class MemoryService:
             return
         try:
             dialogue = _format_dialogue(transcript)
-            result = await self._ark.chat_json(
+            result = await self._client_for(elder_id).chat_json(
                 [
                     {"role": "system", "content": _DISTILL_SYSTEM},
                     {"role": "user", "content": dialogue},

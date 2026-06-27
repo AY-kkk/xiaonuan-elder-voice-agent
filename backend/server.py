@@ -19,7 +19,9 @@ from .config import load_config
 from .engine.factory import create_engine
 from .memory import MemoryService, MemoryStore
 from .signals import SignalService
+from .usage import UsageStore
 from .api import parent as parent_api
+from .api import elder as elder_api
 from .session.manager import ConversationSession
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -38,13 +40,17 @@ if cfg.cors_origins:
         allow_headers=["*"],
     )
 
+# 方舟 LLM 用量记账（成本可观测，只记 token 不记对话内容）
+_usage_store = UsageStore(cfg.db_path)
 # L3 分层记忆服务（层级 A/B 读写 + 异步蒸馏）
 _memory_store = MemoryStore(cfg.db_path)
-_memory = MemoryService(_memory_store, cfg.ark)
+_memory = MemoryService(_memory_store, cfg.ark, usage_store=_usage_store)
 # L4 子女端信号服务（规则引擎 + 隐私友好摘要）
-_signals = SignalService(cfg.db_path, cfg.ark)
-parent_api.bind(_memory_store, _signals)
+_signals = SignalService(cfg.db_path, cfg.ark, usage_store=_usage_store)
+parent_api.bind(_memory_store, _signals, _usage_store, cfg.ark_price_per_mtoken)
+elder_api.bind(_memory_store)
 app.include_router(parent_api.router)
+app.include_router(elder_api.router)
 
 
 def _probe_volc_ready() -> bool:
@@ -59,6 +65,7 @@ def _probe_volc_ready() -> bool:
 async def _init_db() -> None:
     await _memory_store.ensure_schema()
     await _signals.ensure_schema()
+    await _usage_store.ensure_schema()
 
 
 @app.on_event("startup")
@@ -151,6 +158,8 @@ if (_WEB_DIR / "elder").exists():
     app.mount("/elder", StaticFiles(directory=str(_WEB_DIR / "elder"), html=True), name="elder")
 if (_WEB_DIR / "parent").exists():
     app.mount("/parent", StaticFiles(directory=str(_WEB_DIR / "parent"), html=True), name="parent")
+if (_WEB_DIR / "admin").exists():
+    app.mount("/admin", StaticFiles(directory=str(_WEB_DIR / "admin"), html=True), name="admin")
 
 
 def main() -> None:

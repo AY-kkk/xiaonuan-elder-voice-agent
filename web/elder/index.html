@@ -27,9 +27,15 @@
       min-height: 80px; color: #5a5a5a;
     }
     #subtitle .me { color: #2e7d32; }
+    #memories-link {
+      position: fixed; top: 20px; right: 20px; font-size: 18px; color: #6b5a3a;
+      background: rgba(255,255,255,.7); padding: 10px 16px; border-radius: 20px;
+      text-decoration: none; font-weight: 500;
+    }
   </style>
 </head>
 <body>
+  <a id="memories-link" href="./memories.html">聊过的事</a>
   <div id="status">点下面的大按钮，就能和我说话</div>
   <button id="talk-btn">开始<br/>说话</button>
   <div id="subtitle"></div>

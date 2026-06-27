@@ -29,6 +29,8 @@ jobs:
         run: python -m backend.scripts.test_signals
       - name: 多会话隔离（阻断项 · 防串线）
         run: python -m backend.scripts.test_session_isolation
+      - name: 用量记账与成本（含隐私边界）
+        run: python -m backend.scripts.test_usage
       - name: 控制帧契约（阻断项 · R5）
         run: python -m backend.scripts.test_protocol_contract
       - name: 底层协议编解码自测

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>我们聊过的事</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { min-height: 100%; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    body {
+      background: linear-gradient(160deg, #fef6e4 0%, #f3d9b1 100%);
+      color: #3a3a3a; padding: 28px 20px 60px; user-select: none;
+    }
+    h1 { font-size: 30px; font-weight: 700; text-align: center; margin-bottom: 8px; }
+    .sub { font-size: 18px; color: #8a7a5a; text-align: center; margin-bottom: 28px; }
+    .card {
+      background: #fff; border-radius: 18px; padding: 22px 20px; margin-bottom: 16px;
+      box-shadow: 0 4px 14px rgba(0,0,0,.08); font-size: 24px; line-height: 1.6;
+      display: flex; align-items: flex-start; gap: 14px;
+    }
+    .card .dot { flex: none; width: 14px; height: 14px; border-radius: 50%; background: #4caf50; margin-top: 10px; }
+    .empty { text-align: center; color: #b5a880; font-size: 22px; margin-top: 60px; line-height: 1.8; }
+    .back {
+      display: block; margin: 32px auto 0; width: 200px; text-align: center;
+      background: #4caf50; color: #fff; font-size: 24px; font-weight: 700;
+      padding: 16px; border-radius: 14px; text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>我们聊过的事</h1>
+  <div class="sub">这些是小陪记在心里的点点滴滴</div>
+  <div id="list"><div class="empty">加载中…</div></div>
+  <a class="back" href="./">返回说话</a>
+
+  <script src="./config.js"></script>
+  <script>
+    const ELDER_ID = "elder-001";
+    const API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    async function load() {
+      const box = document.getElementById("list");
+      try {
+        const { items } = await fetch(`${API_BASE}/api/elder/${ELDER_ID}/memories`).then((x) => x.json());
+        if (!items || !items.length) {
+          box.innerHTML = '<div class="empty">还没有记下什么呢，<br/>多和小陪聊聊天吧～</div>';
+          return;
+        }
+        box.innerHTML = items.map((m) =>
+          `<div class="card"><span class="dot"></span><span>${escapeHtml(m)}</span></div>`).join("");
+      } catch (e) {
+        box.innerHTML = '<div class="empty">加载失败，请稍后再试</div>';
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

@@ -34,10 +34,22 @@
     button.add { background: #165dff; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; }
     .empty { color: #c9cdd4; font-size: 14px; padding: 8px 0; }
     .privacy { font-size: 12px; color: #86909c; margin-top: 16px; text-align: center; }
+    .cost { display: flex; gap: 16px; }
+    .cost .item { flex: 1; text-align: center; }
+    .cost .num { font-size: 26px; font-weight: 700; color: #165dff; }
+    .cost .num.money { color: #00b42a; }
+    .cost .lbl { font-size: 12px; color: #86909c; margin-top: 2px; }
+    .cost-note { font-size: 11px; color: #c9cdd4; margin-top: 10px; text-align: center; }
   </style>
 </head>
 <body>
   <h1>家人关怀 · 子女端</h1>
+
+  <h2>本月关怀成本</h2>
+  <div class="card">
+    <div class="cost" id="cost"><div class="empty">加载中…</div></div>
+    <div class="cost-note" id="cost-note"></div>
+  </div>
 
   <h2>每日信号摘要</h2>
   <div id="signals"><div class="empty">加载中…</div></div>
@@ -117,9 +129,24 @@
     function fmtTime(ts) { return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false }); }
     function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
+    async function loadCost() {
+      const box = document.getElementById("cost");
+      const note = document.getElementById("cost-note");
+      try {
+        const u = await fetch(api(`${ELDER_ID}/usage`)).then((x) => x.json());
+        box.innerHTML = `
+          <div class="item"><div class="num money">¥${u.cost_yuan.toFixed(2)}</div><div class="lbl">${u.month} 预估花费</div></div>
+          <div class="item"><div class="num">${u.calls}</div><div class="lbl">本月关怀分析次数</div></div>`;
+        note.textContent = `按 ¥${u.price_per_mtoken}/百万字估算，实际以服务商账单为准`;
+      } catch (e) {
+        box.innerHTML = '<div class="empty">成本数据加载失败</div>';
+      }
+    }
+
     document.getElementById("fact-form").addEventListener("submit", addFact);
     loadCategories().then(loadFacts);
     loadSignals();
+    loadCost();
   </script>
 </body>
 </html>
