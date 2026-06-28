@@ -1,0 +1,337 @@
+.parent-screen {
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--sp-md);
+}
+.head h1 {
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-heavy);
+  letter-spacing: -.5px;
+}
+.head .date,
+.head .sub {
+  margin-top: var(--sp-xs);
+  font-size: var(--fs-label);
+  color: var(--color-sub);
+  line-height: 1.5;
+}
+.head .logo {
+  --m-size: 52px;
+}
+
+.hero {
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-heavy);
+  line-height: 1.25;
+  margin-bottom: var(--sp-lg);
+}
+
+.card {
+  background: var(--color-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-soft);
+  padding: var(--sp-md) var(--sp-md) var(--sp-lg);
+  margin-bottom: var(--sp-md);
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-md);
+}
+.card-title {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-heavy);
+}
+.empty {
+  color: var(--color-sub);
+  font-size: var(--fs-label);
+  padding: var(--sp-sm) 0;
+  line-height: 1.6;
+}
+.privacy {
+  text-align: center;
+  font-size: var(--fs-caption);
+  color: var(--color-sub);
+  margin: var(--sp-xs) 0 var(--sp-md);
+  line-height: 1.6;
+}
+
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-accent);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-heavy);
+}
+.state-badge svg,
+.signal-ico svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.state-line {
+  font-size: var(--fs-body);
+  color: var(--color-sub);
+  line-height: 1.5;
+}
+
+.signal,
+.fact,
+.memory,
+.role,
+.tx-row {
+  border-top: 1px solid var(--color-tint);
+  padding: var(--sp-sm) 0;
+}
+.signal:first-child,
+.fact:first-child,
+.memory:first-child,
+.role:first-child,
+.tx-row:first-child {
+  border-top: none;
+}
+.signal,
+.memory {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+}
+.signal-ico {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 12px;
+  background: var(--color-tint);
+  display: grid;
+  place-items: center;
+  color: var(--color-hairline);
+}
+.signal.attention .signal-ico {
+  background: rgba(232,129,74,.14);
+  color: var(--color-accent);
+}
+.signal.urgent .signal-ico {
+  background: rgba(194,70,45,.16);
+  color: var(--color-danger);
+}
+.signal-body,
+.memory-body,
+.fact-body {
+  flex: 1;
+}
+.signal-sum,
+.memory-text,
+.fact-name {
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+.fact-name,
+.role-name {
+  font-weight: var(--fw-heavy);
+}
+.signal-meta,
+.memory-meta,
+.fact-meta,
+.role-meta,
+.tx-meta,
+.helper {
+  font-size: var(--fs-caption);
+  color: var(--color-sub);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+.signal-review {
+  display: inline-block;
+  color: var(--color-danger);
+  margin-left: 6px;
+  font-weight: var(--fw-mid);
+}
+.tag,
+.lvl-badge,
+.status-pill {
+  display: inline-block;
+  font-size: var(--fs-caption);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+}
+.tag {
+  background: var(--color-tint);
+  color: var(--color-sub);
+  margin-right: 6px;
+}
+.lvl-badge,
+.status-pill {
+  margin-left: 6px;
+}
+.lvl-badge.normal,
+.status-pill {
+  background: var(--color-tint);
+  color: var(--color-sub);
+}
+.lvl-badge.attention,
+.status-pill.pending {
+  background: rgba(232,129,74,.16);
+  color: var(--color-accent);
+}
+.lvl-badge.urgent {
+  background: rgba(194,70,45,.16);
+  color: var(--color-danger);
+}
+.status-pill.active {
+  background: rgba(78,141,110,.16);
+  color: var(--color-success);
+}
+
+.fact {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.actions,
+.role-actions {
+  display: flex;
+  gap: var(--sp-xs);
+  flex-wrap: wrap;
+}
+.actions {
+  justify-content: flex-end;
+  max-width: 140px;
+}
+.btn,
+.small-btn,
+.danger-btn {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  border-radius: 14px;
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: var(--fs-caption);
+  background: var(--color-tint);
+  color: var(--color-ink);
+}
+.btn.primary,
+.small-btn.primary {
+  background: var(--color-ink);
+  color: var(--color-card);
+}
+.danger-btn {
+  color: var(--color-danger);
+  background: transparent;
+}
+
+.form {
+  display: grid;
+  gap: var(--sp-xs);
+  margin-top: var(--sp-md);
+}
+.inline-form {
+  display: flex;
+  gap: var(--sp-xs);
+  margin-top: var(--sp-md);
+  flex-wrap: wrap;
+}
+.form input,
+.form textarea,
+.inline-form input,
+.inline-form select {
+  width: 100%;
+  font-size: var(--fs-label);
+  font-family: inherit;
+  padding: 12px;
+  border: 2px solid var(--color-tint);
+  border-radius: 14px;
+  background: var(--color-bg-alt);
+  color: var(--color-ink);
+}
+.inline-form input {
+  flex: 1;
+  min-width: 120px;
+}
+.inline-form select {
+  width: auto;
+}
+.form textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-caption);
+  color: var(--color-sub);
+  line-height: 1.5;
+}
+.check input {
+  width: auto;
+  margin-top: 4px;
+}
+
+.cost {
+  display: flex;
+  gap: var(--sp-md);
+}
+.cost .item {
+  flex: 1;
+}
+.cost .num {
+  font-size: var(--fs-display);
+  font-weight: var(--fw-heavy);
+  color: var(--color-accent);
+  font-family: var(--font-num);
+}
+.cost .num.calls {
+  color: var(--color-ink);
+}
+.cost .lbl {
+  font-size: var(--fs-label);
+  color: var(--color-sub);
+  margin-top: var(--sp-xs);
+}
+
+.profile-list {
+  display: grid;
+  gap: var(--sp-sm);
+}
+.profile-item {
+  background: var(--color-tint);
+  border-radius: 18px;
+  padding: var(--sp-md);
+}
+.profile-item strong {
+  display: block;
+  font-size: var(--fs-body);
+  margin-bottom: 4px;
+}
+
+@media (max-width: 390px) {
+  .tabbar {
+    padding-left: var(--sp-xs);
+    padding-right: var(--sp-xs);
+  }
+  .tab {
+    min-width: 50px;
+  }
+  .tab span {
+    font-size: 13px;
+  }
+}

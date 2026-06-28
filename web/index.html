@@ -1,98 +1,124 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>小暖 · 选择身份</title>
-<link rel="stylesheet" href="./shared/theme.css" />
-<link rel="stylesheet" href="./shared/mascot.css" />
-<style>
-  .screen { justify-content: flex-start; }
-  .brand { text-align: center; margin: var(--sp-lg) 0 var(--sp-md); }
-  .brand .logo { --m-size: 120px; margin: 0 auto var(--sp-md); }
-  .brand h1 { font-size: var(--fs-display); font-weight: var(--fw-heavy); letter-spacing: -.5px; }
-  .brand p { margin-top: var(--sp-xs); font-size: var(--fs-body); color: var(--color-sub); }
-
-  .pick-hint { text-align: center; font-size: var(--fs-body); color: var(--color-sub); margin: var(--sp-md) 0 var(--sp-lg); }
-
-  .choices { display: flex; flex-direction: column; gap: var(--sp-md); }
-  .choice {
-    display: flex; align-items: center; gap: var(--sp-md);
-    background: var(--color-card); border: none; cursor: pointer; text-align: left;
-    border-radius: var(--radius-card); box-shadow: var(--shadow-soft);
-    padding: var(--sp-lg) var(--sp-md); min-height: 96px;
-    transition: transform .12s ease, box-shadow .2s ease;
-  }
-  .choice:active { transform: scale(.98); }
-  .choice .ico {
-    width: 64px; height: 64px; flex: none; border-radius: 20px;
-    display: grid; place-items: center; color: var(--color-card);
-    background: var(--color-ink);
-  }
-  .choice.elder .ico { background: var(--color-accent); }
-  .choice .ico svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .choice .txt { flex: 1; }
-  .choice .txt .t { font-size: var(--fs-h2); font-weight: var(--fw-heavy); }
-  .choice .txt .d { font-size: var(--fs-label); color: var(--color-sub); margin-top: 4px; }
-  .choice .arrow { color: var(--color-hairline); }
-  .choice .arrow svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-
-  .foot { margin-top: auto; text-align: center; font-size: var(--fs-caption); color: var(--color-sub); padding: var(--sp-lg) 0; line-height: 1.6; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>小暖 · 欢迎页</title>
+  <link rel="stylesheet" href="./shared/theme.css" />
+  <link rel="stylesheet" href="./shared/mascot.css" />
+  <style>
+    body {
+      background: #fffdfc;
+    }
+    .entry {
+      width: 390px;
+      max-width: 100%;
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: var(--sp-xl) var(--sp-md);
+      background: #fffdfc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .entry-mascot {
+      --m-size: 150px;
+      filter: drop-shadow(0 14px 28px rgba(28, 26, 23, .14));
+      animation: mascot-breathe 2.8s ease-in-out infinite;
+      margin-bottom: var(--sp-lg);
+    }
+    @keyframes mascot-breathe {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-6px) scale(1.025); }
+    }
+    .brand {
+      text-align: center;
+      margin-bottom: var(--sp-xl);
+    }
+    .brand h1 {
+      font-size: var(--fs-display);
+      font-weight: var(--fw-heavy);
+      letter-spacing: -.5px;
+      line-height: 1.15;
+    }
+    .brand p {
+      margin-top: var(--sp-sm);
+      font-size: var(--fs-body);
+      color: var(--color-sub);
+      line-height: 1.5;
+    }
+    .choices {
+      width: 100%;
+      display: grid;
+      gap: var(--sp-md);
+    }
+    .choice {
+      width: 100%;
+      min-height: 72px;
+      border: none;
+      border-radius: 22px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: var(--fs-body);
+      font-weight: var(--fw-heavy);
+      box-shadow: var(--shadow-soft);
+      transition: transform .12s ease, box-shadow .2s ease;
+    }
+    .choice:active {
+      transform: scale(.98);
+    }
+    .choice.elder {
+      background: var(--color-accent);
+      color: var(--color-card);
+    }
+    .choice.family {
+      background: var(--color-card);
+      color: var(--color-ink);
+    }
+    .foot {
+      margin-top: var(--sp-lg);
+      text-align: center;
+      font-size: var(--fs-caption);
+      color: var(--color-sub);
+      line-height: 1.6;
+    }
+  </style>
 </head>
 <body>
-  <main class="screen">
-    <div class="brand">
-      <!-- 动态吉祥物（纯 CSS，无图片） -->
-      <div class="mascot is-idle logo" aria-hidden="true">
-        <span class="body"></span><span class="hand"></span>
-        <span class="eye l"></span><span class="eye r"></span><span class="mouth"></span>
-      </div>
-      <h1>你好，我是小暖</h1>
-      <p>陪伴长辈，连接家人</p>
+  <main class="entry">
+    <div class="mascot is-idle entry-mascot" aria-hidden="true">
+      <span class="body"></span><span class="hand"></span>
+      <span class="eye l"></span><span class="eye r"></span><span class="mouth"></span>
     </div>
 
-    <p class="pick-hint">请选择你的身份，进入专属页面</p>
+    <section class="brand" aria-label="小暖欢迎页">
+      <h1>小暖在这里</h1>
+      <p>一边陪长辈说话，一边帮家人放心</p>
+    </section>
 
     <div class="choices">
-      <!-- 老年人入口 -->
-      <button class="choice elder" data-target="./elder/">
-        <span class="ico" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-        </span>
-        <span class="txt">
-          <span class="t">我是长辈</span>
-          <span class="d">大按钮、大字，轻松和家人语音聊天</span>
-        </span>
-        <span class="arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span>
-      </button>
-
-      <!-- 年轻人（子女）入口 -->
-      <button class="choice young" data-target="./parent/">
-        <span class="ico" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        </span>
-        <span class="txt">
-          <span class="t">我是子女</span>
-          <span class="d">查看长辈每日状态信号与关怀提醒</span>
-        </span>
-        <span class="arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span>
-      </button>
+      <button class="choice elder" data-target="./elder/">我是长辈</button>
+      <button class="choice family" data-target="./parent/">我是家人</button>
     </div>
 
-    <p class="foot">隐私保护 · 子女端只看状态信号，绝不展示原始对话</p>
+    <p class="foot">选择身份后，进入对应页面</p>
   </main>
 
-<script>
-  // 进入应用第一步：始终显示身份选择页，用户自由点击进入对应端。
-  // 记录选择仅用于子页导航高亮，不做任何自动跳转（避免用户被锁死在某一端、看不到选择页）。
-  document.querySelectorAll(".choice").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const role = btn.classList.contains("elder") ? "elder" : "young";
-      try { localStorage.setItem("xiaonuan_role", role); } catch (_) {}
-      location.href = btn.dataset.target;
+  <script>
+    document.querySelectorAll(".choice").forEach((button) => {
+      button.addEventListener("click", () => {
+        const role = button.classList.contains("elder") ? "elder" : "family";
+        try { localStorage.setItem("xiaonuan_role", role); } catch (_) {}
+        const target = button.dataset.target;
+        if (location.protocol === "file:") {
+          location.href = `http://127.0.0.1:8010/${target.replace(/^\.\//, "")}`;
+          return;
+        }
+        location.href = target;
+      });
     });
-  });
-</script>
+  </script>
 </body>
 </html>

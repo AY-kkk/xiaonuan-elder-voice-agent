@@ -9,6 +9,11 @@ const hintEl = document.getElementById("status-hint");
 const textEl = document.getElementById("talk-text");
 const timerEl = document.getElementById("talk-timer");
 const subtitleEl = document.getElementById("subtitle");
+const vadStateEl = document.getElementById("vad-state");
+const familyNoticeEl = document.getElementById("family-notice");
+const noticeTextEl = document.getElementById("notice-text");
+const noticeAcceptBtn = document.getElementById("notice-accept");
+const noticeLaterBtn = document.getElementById("notice-later");
 
 let ws = null;
 let audioCtx = null;
@@ -19,10 +24,17 @@ let live = false;
 let timerId = null, seconds = 0;
 
 // 本地 VAD 即时打断：Agent 出声时连续多帧高能量即判定老人插话，立刻本地停播。
-const VAD_RMS_THRESHOLD = 0.04;
-const VAD_TRIGGER_FRAMES = 4;
+const VAD_BASE_RMS_THRESHOLD = 0.04;
+const VAD_TRIGGER_FRAMES = 5;
+const VAD_CALIBRATION_FRAMES = 50; // 约 1 秒，用于估计当前房间/设备噪声底
+const VAD_COOLDOWN_MS = 900;
+const VAD_ECHO_GRACE_MS = 180;
 let vadVoiceFrames = 0;
 let bargedLocally = false;
+let vadNoiseFloor = 0.01;
+let vadCalibrationFrames = 0;
+let lastInterruptAt = 0;
+let agentAudioSince = 0;
 // 音频门闩（precise stop chain）：打断后关闸丢弃在途旧轮残尾，下一帧文本才重新开闸。
 let acceptingAudio = true;
 
@@ -77,6 +89,10 @@ function apiBase() {
   return (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
 }
 
+function apiUrl(path) {
+  return `${apiBase()}${path}`;
+}
+
 function wsUrl() {
   const base = apiBase();
   if (base) {
@@ -107,6 +123,40 @@ async function precheckReady() {
   return true;
 }
 
+async function loadCompanionNotice() {
+  if (!familyNoticeEl) return;
+  try {
+    const data = await fetch(apiUrl(`/api/elder/${ELDER_ID}/companions`)).then((x) => x.json());
+    if (!data.notice) return;
+    familyNoticeEl.dataset.characterId = data.notice.character_id;
+    noticeTextEl.textContent = data.notice.text;
+    familyNoticeEl.classList.add("show");
+  } catch (_) {
+    // 陪伴提示失败不影响老人一键通话。
+  }
+}
+
+async function activateNoticeCompanion() {
+  const characterId = familyNoticeEl && familyNoticeEl.dataset.characterId;
+  if (!characterId) return;
+  try {
+    await fetch(apiUrl(`/api/elder/${ELDER_ID}/companions/${characterId}/activate`), { method: "POST" });
+    familyNoticeEl.classList.remove("show");
+    hintEl.textContent = "好啦，今天就让 TA 陪你说说话";
+  } catch (_) {
+    hintEl.textContent = "暂时没换成，等家人再帮你看看";
+  }
+}
+
+async function dismissNoticeCompanion() {
+  const characterId = familyNoticeEl && familyNoticeEl.dataset.characterId;
+  familyNoticeEl.classList.remove("show");
+  if (!characterId) return;
+  try {
+    await fetch(apiUrl(`/api/elder/${ELDER_ID}/companions/${characterId}/notice_seen`), { method: "POST" });
+  } catch (_) {}
+}
+
 async function start() {
   setUiState("connecting");
   btn.disabled = true;
@@ -133,6 +183,7 @@ async function start() {
     workletNode.port.onmessage = (e) => {
       const { pcm, rms } = e.data;
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(pcm);
+      calibrateVad(rms);
       localVad(rms);
     };
 
@@ -188,7 +239,10 @@ function failStart(err) {
 
 function onMessage(e) {
   if (e.data instanceof ArrayBuffer) {
-    if (acceptingAudio && player) player.enqueue(e.data); // player 已清理则丢弃
+    if (acceptingAudio && player) {
+      player.enqueue(e.data); // player 已清理则丢弃
+      markAgentAudio();
+    }
     return;
   }
   let msg;
@@ -213,16 +267,49 @@ function interrupt() {
   bargedLocally = true;
   acceptingAudio = false;
   vadVoiceFrames = 0;
+  lastInterruptAt = Date.now();
+  updateVadState("已为插话停播");
 }
 
 function localVad(rms) {
   if (!player || !player.isPlaying || bargedLocally) { vadVoiceFrames = 0; return; }
-  if (rms >= VAD_RMS_THRESHOLD) {
+  const now = Date.now();
+  if (now - lastInterruptAt < VAD_COOLDOWN_MS || now - agentAudioSince < VAD_ECHO_GRACE_MS) {
+    vadVoiceFrames = 0;
+    return;
+  }
+  if (rms >= currentVadThreshold()) {
     vadVoiceFrames += 1;
     if (vadVoiceFrames >= VAD_TRIGGER_FRAMES) interrupt();
   } else {
     vadVoiceFrames = 0;
   }
+}
+
+function calibrateVad(rms) {
+  if (!Number.isFinite(rms)) return;
+  if (player && player.isPlaying) return;
+  if (vadCalibrationFrames < VAD_CALIBRATION_FRAMES) {
+    vadNoiseFloor = vadNoiseFloor * 0.9 + rms * 0.1;
+    vadCalibrationFrames += 1;
+    if (vadCalibrationFrames === VAD_CALIBRATION_FRAMES) updateVadState("回声保护已开启");
+    return;
+  }
+  // 空闲期缓慢跟随环境噪声，避免电视声/风扇声导致阈值长期不匹配。
+  vadNoiseFloor = vadNoiseFloor * 0.98 + Math.min(rms, 0.08) * 0.02;
+}
+
+function currentVadThreshold() {
+  return Math.max(VAD_BASE_RMS_THRESHOLD, vadNoiseFloor * 4.5);
+}
+
+function markAgentAudio() {
+  if (!agentAudioSince) updateVadState("回声保护已开启");
+  agentAudioSince = Date.now();
+}
+
+function updateVadState(text) {
+  if (vadStateEl) vadStateEl.textContent = text;
 }
 
 function stop() {
@@ -240,6 +327,11 @@ function cleanupAfterStop() {
   if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
   if (audioCtx) { audioCtx.close(); audioCtx = null; }
   if (player) { player.clear(); player = null; }
+  vadVoiceFrames = 0;
+  bargedLocally = false;
+  acceptingAudio = true;
+  agentAudioSince = 0;
+  updateVadState("回声保护待开启");
 }
 
 // 通话按钮：通话中→挂断；空闲→发起通话（失败已由 start() 内部收口）。
@@ -247,3 +339,7 @@ btn.addEventListener("click", () => {
   if (live) stop();
   else start();
 });
+
+if (noticeAcceptBtn) noticeAcceptBtn.addEventListener("click", activateNoticeCompanion);
+if (noticeLaterBtn) noticeLaterBtn.addEventListener("click", dismissNoticeCompanion);
+loadCompanionNotice();

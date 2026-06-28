@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>小暖 · 我的</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="../shared/mascot.css" />
+  <link rel="stylesheet" href="./parent.css" />
+</head>
+<body data-parent-page="profile">
+  <main class="screen parent-screen">
+    <header class="head">
+      <div>
+        <h1>我的</h1>
+        <p class="sub">家庭、身份和服务设置</p>
+      </div>
+      <div class="mascot is-idle logo" aria-hidden="true">
+        <span class="body"></span><span class="hand"></span>
+        <span class="eye l"></span><span class="eye r"></span><span class="mouth"></span>
+      </div>
+    </header>
+
+    <section class="card" aria-label="当前家庭">
+      <div class="card-head"><span class="card-title">当前家庭</span></div>
+      <div class="profile-list">
+        <div class="profile-item">
+          <strong>长辈</strong>
+          <span class="helper">elder-001</span>
+        </div>
+        <div class="profile-item">
+          <strong>我的身份</strong>
+          <span class="helper">家人</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-label="设置">
+      <div class="card-head"><span class="card-title">设置</span></div>
+      <div class="profile-list">
+        <div class="profile-item">
+          <strong>隐私说明</strong>
+          <span class="helper">子女端只展示状态信号、重点事项和整理后的一句话记忆，不展示原始对话。</span>
+        </div>
+        <div class="profile-item">
+          <strong>服务设置</strong>
+          <span class="helper">语音服务、模型和账单配置由本机后端环境统一管理。</span>
+        </div>
+      </div>
+      <div class="role-actions" style="margin-top: var(--sp-md);">
+        <a class="btn primary" href="../index.html?pick=1">切换身份</a>
+      </div>
+    </section>
+
+    <p class="privacy">家庭数据按长辈隔离，配置只服务当前家庭</p>
+    <div id="parent-nav"></div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="./config.js"></script>
+  <script src="./shared.js"></script>
+  <script src="./nav.js"></script>
+</body>
+</html>

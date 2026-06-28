@@ -23,6 +23,18 @@ def _get(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
 
+def _default_voice_engine() -> str:
+    configured = _get("VOICE_ENGINE")
+    if configured:
+        engine = configured.lower()
+        if engine == "seeduplex" and not (_get("VOLC_APP_ID") and _get("VOLC_ACCESS_TOKEN")):
+            return "fake"
+        return engine
+    if _get("VOLC_APP_ID") and _get("VOLC_ACCESS_TOKEN"):
+        return "seeduplex"
+    return "fake"
+
+
 def require(name: str) -> str:
     """惰性校验：仅在真正使用某引擎时调用，避免未用到的凭证导致启动失败。"""
     value = _get(name)
@@ -76,7 +88,9 @@ class ArkConfig:
 class AppConfig:
     host: str = field(default_factory=lambda: _get("HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: int(_get("PORT", "8000")))
-    engine: str = field(default_factory=lambda: _get("VOICE_ENGINE", "seeduplex").lower())
+    # 未显式配置 VOICE_ENGINE 时：有火山语音凭证走真实 seeduplex；无凭证走 fake，
+    # 保证本地演示和自动化测试选择身份后仍可完整交互。
+    engine: str = field(default_factory=_default_voice_engine)
     db_path: str = field(default_factory=lambda: _get("DB_PATH") or str(_PROJECT_ROOT / "backend" / "memory.db"))
     # 跨域放行源（前后端分离部署时填，逗号分隔；留空=不额外放行，同源托管最安全）
     cors_origins: tuple = field(

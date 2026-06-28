@@ -21,23 +21,28 @@ from typing import Optional
 
 from ..ark.text_client import ArkTextClient
 from ..config import ArkConfig
+from .persona_skill import PERSONA_DISTILL_SKILL
 
 logger = logging.getLogger(__name__)
 
 _DISTILL_SYSTEM = (
-    "你是“人格画像”分析师。请阅读一段某个人物的真实说话片段/聊天记录，"
-    "提炼出能让 AI 逼真扮演此人的特征。只输出 JSON，不要解释。格式：\n"
-    '{"identity": "身份与角色一句话", '
-    '"tone": "说话语气与情绪基调", '
-    '"speech_style": "用词/句式/标点/口头禅等表达习惯", '
-    '"knowledge": "知识背景与擅长话题", '
-    '"values": "在意的事与价值取向", '
-    '"taboos": ["绝不会说或做的事，可空"]}\n'
-    "要求：基于语料真实归纳，不要编造语料里没有的信息；每项简短精炼。"
+    "你是家庭照护场景的人物关系画像分析师。请阅读一段某个人物的说话片段，"
+    "提炼出适合老人语音陪伴的角色设定。只输出 JSON，不要解释。格式：\n"
+    '{"identity": "这个人是谁，一句话", '
+    '"address_style": "TA 通常如何称呼老人、如何自称", '
+    '"emotional_style": "情绪基调，如温柔/爽朗/慢条斯理/爱开玩笑", '
+    '"speech_style": "用词、句式、口头禅、停顿特点", '
+    '"caring_behaviors": ["TA 会怎样关心老人"], '
+    '"boundaries": ["必须遵守的照护边界"], '
+    '"avoid_topics": ["不应主动提起的话题，可空"], '
+    '"phrase_patterns": ["可模仿的句式模式或短句类型，不能输出原文"]}\n'
+    "要求：只基于语料归纳，不编造具体事实；不要输出原始聊天句子；"
+    "重点服务老人陪伴，温和、克制、不制造监控感；涉及医疗只建议联系医生或家人。\n"
+    f"{PERSONA_DISTILL_SKILL}"
 )
 
 # 注入发声链路的人格段落框架（拼在基础陪伴人设之后）。
-_PERSONA_HEADER = "【你要扮演的角色设定，请始终用 TA 的口吻、性格与说话习惯回应】"
+_PERSONA_HEADER = "【陪伴角色画像：请用这个人的说话方式陪老人聊天】"
 
 
 class PersonaService:
@@ -94,25 +99,34 @@ class PersonaService:
 
 
 def _render_prompt(name: str, relation: str, traits: dict) -> str:
-    """把五层人格 JSON 渲染成可注入的提示词片段。"""
+    """把家庭陪伴画像 JSON 渲染成可注入的提示词片段。"""
     lines = [_PERSONA_HEADER, f"- 角色：{name}" + (f"（{relation}）" if relation else "")]
     field_label = [
         ("identity", "身份"),
-        ("tone", "语气"),
+        ("address_style", "称呼方式"),
+        ("emotional_style", "情绪基调"),
         ("speech_style", "说话习惯"),
-        ("knowledge", "知识背景"),
-        ("values", "在意的事"),
     ]
     for key, label in field_label:
         val = str(traits.get(key, "")).strip()
         if val:
             lines.append(f"- {label}：{val}")
-    taboos = traits.get("taboos")
-    if isinstance(taboos, list):
-        items = [str(t).strip() for t in taboos if str(t).strip()]
-        if items:
-            lines.append("- 绝不会：" + "；".join(items))
-    lines.append("注意：保持温和耐心，适配老年人陪伴场景；不做医疗诊断，遇健康问题温柔建议就医。")
+    list_fields = [
+        ("caring_behaviors", "关心方式"),
+        ("boundaries", "边界"),
+        ("avoid_topics", "不要主动提"),
+        ("phrase_patterns", "句式模式"),
+    ]
+    for key, label in list_fields:
+        items = traits.get(key)
+        if isinstance(items, list):
+            values = [str(t).strip() for t in items if str(t).strip()]
+            if values:
+                lines.append(f"- {label}：" + "；".join(values))
+    lines.append(
+        "使用规则：像这个人一样自然说话，但不要声称自己真的就是本人；不要复述上传语料；"
+        "不做医疗诊断，遇健康问题温柔建议联系医生或家人。"
+    )
     return "\n".join(lines)
 
 
@@ -122,8 +136,11 @@ def _template_prompt(name: str, relation: str, traits: Optional[dict]) -> str:
     return (
         f"{_PERSONA_HEADER}\n"
         f"- 角色：{who}\n"
-        f"- 请用亲切自然、贴近日常的口吻，像 {who} 那样陪老人聊天。\n"
-        "注意：保持温和耐心，适配老年人陪伴场景；不做医疗诊断，遇健康问题温柔建议就医。"
+        f"- 称呼方式：使用家人之间自然、亲近但不过分夸张的称呼。\n"
+        f"- 情绪基调：亲切、耐心、克制，像 {who} 在身边慢慢陪老人说话。\n"
+        "- 关心方式：多问候身体、吃饭、睡眠和心情；提醒时用商量语气，不命令。\n"
+        "- 边界：不做医疗诊断，不制造监控感，不反复追问老人不想说的事。\n"
+        "使用规则：像这个人一样自然说话，但不要声称自己真的就是本人；遇健康问题温柔建议联系医生或家人。"
     )
 
 

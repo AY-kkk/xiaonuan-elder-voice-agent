@@ -38,6 +38,12 @@ def _test_rules() -> None:
     assert r["mood"] == "低落", r
     summary = rules.build_summary(r)
     assert "紧急" in summary, summary
+
+    # 第三方/媒体语境的紧急词：不直接升级 urgent，给子女端复核提示
+    third_party = [{"role": "user", "text": "刚才电视里说有个邻居摔倒了，挺吓人的。"}]
+    r = rules.analyze_text(third_party)
+    assert r["level"] == rules.LEVEL_ATTENTION, r
+    assert r["review_required"] is True, r
     print("[PASS] 规则引擎：正常/关注/紧急 三级判定正确")
 
 
@@ -63,6 +69,7 @@ async def _test_privacy_and_persist() -> None:
     items = await svc.list_signals(ELDER)
     assert len(items) == 1, items
     stored = items[0]
+    assert "confidence" in stored and "review_required" in stored, stored
     # 隐私硬边界：落库内容绝不含原始对话片段
     blob = str(stored)
     assert secret not in blob, "信号泄露了原始对话！"

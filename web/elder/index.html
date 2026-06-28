@@ -52,6 +52,29 @@
     .subtitle .me { color: var(--color-accent); font-weight: var(--fw-mid); }
     .subtitle .ta { color: var(--color-ink); font-weight: var(--fw-mid); }
 
+    .safety-strip {
+      display: flex; align-items: center; gap: 8px;
+      margin: var(--sp-sm) 0 0; padding: 10px 14px;
+      border-radius: var(--radius-pill); background: var(--color-tint);
+      color: var(--color-sub); font-size: var(--fs-caption);
+    }
+    .safety-strip svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    .family-notice {
+      display: none; background: var(--color-card); border-radius: var(--radius-card);
+      box-shadow: var(--shadow-soft); padding: var(--sp-md); margin: var(--sp-md) 0;
+    }
+    .family-notice.show { display: block; }
+    .family-notice h2 { font-size: var(--fs-h2); line-height: 1.25; margin-bottom: var(--sp-xs); }
+    .family-notice p { font-size: var(--fs-label); color: var(--color-sub); line-height: 1.5; }
+    .notice-actions { display: flex; gap: var(--sp-xs); margin-top: var(--sp-sm); }
+    .notice-actions button {
+      flex: 1; border: none; border-radius: 14px; padding: 12px; font-size: var(--fs-label);
+      font-weight: var(--fw-mid); font-family: inherit;
+    }
+    .notice-actions .primary { background: var(--color-ink); color: var(--color-card); }
+    .notice-actions .secondary { background: var(--color-tint); color: var(--color-ink); }
+
     /* 用药提醒卡片 */
     .med-card { background: var(--color-card); border-radius: var(--radius-card); box-shadow: var(--shadow-soft); padding: var(--sp-md) var(--sp-md) var(--sp-lg); margin: var(--sp-md) 0; }
     .med-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--color-accent); color: var(--color-card); font-size: var(--fs-label); font-weight: var(--fw-mid); padding: 6px 14px; border-radius: var(--radius-pill); margin-bottom: var(--sp-sm); }
@@ -104,6 +127,19 @@
 
     <!-- 字幕 -->
     <div class="subtitle" id="subtitle"></div>
+    <div class="safety-strip" aria-live="polite">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+      <span id="vad-state">回声保护待开启</span>
+    </div>
+
+    <section class="family-notice" id="family-notice" aria-live="polite">
+      <h2 id="notice-title">家人给你准备好了</h2>
+      <p id="notice-text"></p>
+      <div class="notice-actions">
+        <button class="primary" id="notice-accept">让 TA 陪我</button>
+        <button class="secondary" id="notice-later">先不用</button>
+      </div>
+    </section>
 
     <!-- 用药提醒卡片 -->
     <section class="med-card" aria-label="用药提醒">
@@ -123,11 +159,11 @@
       </a>
       <a class="tab" href="./memories.html">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span>聊过的事</span>
+        <span>关心我的事</span>
       </a>
       <a class="tab" href="./character.html">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-        <span>换个声音</span>
+        <span>通话对象</span>
       </a>
       <a class="tab" href="../index.html?pick=1">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>

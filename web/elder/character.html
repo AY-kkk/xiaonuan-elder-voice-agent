@@ -3,66 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>小暖 · 换个声音</title>
+  <title>小暖 · 通话对象</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="../shared/mascot.css" />
   <style>
-    .screen { padding-top: var(--sp-lg); }
-    .brand { text-align: center; margin-bottom: var(--sp-lg); }
-    .brand .logo { --m-size: 84px; margin: 0 auto var(--sp-sm); }
-    h1 { font-size: var(--fs-h1); font-weight: var(--fw-heavy); text-align: center; margin-bottom: var(--sp-xs); letter-spacing: -.5px; }
-    .sub { font-size: var(--fs-label); color: var(--color-sub); text-align: center; margin-bottom: var(--sp-lg); }
-    .card { background: var(--color-card); border-radius: var(--radius-card); padding: var(--sp-md); margin-bottom: var(--sp-md); box-shadow: var(--shadow-soft); }
-    .card h2 { font-size: var(--fs-h2); margin-bottom: var(--sp-sm); color: var(--color-ink); font-weight: var(--fw-heavy); }
-    .step-tag { display: inline-block; background: var(--color-accent); color: var(--color-card); border-radius: 50%; width: 28px; height: 28px; line-height: 28px; text-align: center; font-size: var(--fs-label); margin-right: var(--sp-xs); }
-    label { display: block; font-size: var(--fs-label); color: var(--color-sub); margin: var(--sp-sm) 0 6px; }
-    input[type=text], textarea, input[type=file] { width: 100%; font-size: var(--fs-body); padding: 12px; border: 2px solid var(--color-tint); border-radius: 14px; background: var(--color-bg-alt); color: var(--color-ink); }
-    textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
-    .hint { font-size: var(--fs-caption); color: var(--color-sub); margin-top: 6px; line-height: 1.5; }
-    button { font-family: inherit; cursor: pointer; }
-    .btn { display: block; width: 100%; background: var(--color-ink); color: var(--color-card); font-size: var(--fs-body); font-weight: var(--fw-heavy); padding: 14px; border: none; border-radius: 14px; margin-top: var(--sp-md); }
-    .btn.secondary { background: var(--color-card); color: var(--color-ink); border: 2px solid var(--color-ink); }
-    .btn:disabled { opacity: .5; }
-    .role { border: 2px solid var(--color-tint); border-radius: 18px; padding: var(--sp-sm); margin-bottom: var(--sp-sm); }
-    .role.active { border-color: var(--color-accent); background: rgba(232,129,74,.06); }
-    .role .name { font-size: var(--fs-body); font-weight: var(--fw-heavy); }
-    .role .rel { font-size: var(--fs-label); color: var(--color-sub); margin-left: var(--sp-xs); }
-    .badges { margin: var(--sp-xs) 0; }
-    .badge { display: inline-block; font-size: var(--fs-caption); padding: 3px 10px; border-radius: var(--radius-pill); margin-right: 6px; }
-    .badge.ok { background: rgba(78,141,110,.18); color: var(--color-success); }
-    .badge.wait { background: rgba(232,129,74,.16); color: var(--color-accent); }
-    .badge.no { background: var(--color-tint); color: var(--color-sub); }
-    .row { display: flex; gap: 10px; }
-    .row .btn { margin-top: var(--sp-xs); }
-    .muted { color: var(--color-sub); font-size: var(--fs-label); text-align: center; padding: var(--sp-sm); }
+    body { user-select: none; }
+    .head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: var(--sp-lg); }
+    .head .logo { --m-size: 56px; }
+    .head h1 { font-size: var(--fs-h1); font-weight: var(--fw-heavy); letter-spacing: 0; }
+    .head .sub { margin-top: var(--sp-xs); font-size: var(--fs-body); color: var(--color-sub); line-height: 1.45; }
+    .companion {
+      background: var(--color-card); border-radius: var(--radius-card); box-shadow: var(--shadow-soft);
+      padding: var(--sp-md); margin-bottom: var(--sp-md); border: 3px solid transparent;
+    }
+    .companion.active { border-color: var(--color-accent); }
+    .name { font-size: var(--fs-h2); font-weight: var(--fw-heavy); line-height: 1.25; }
+    .relation { font-size: var(--fs-label); color: var(--color-sub); margin-top: 2px; }
+    .copy { font-size: var(--fs-body); color: var(--color-sub); line-height: 1.45; margin-top: var(--sp-sm); }
+    .state {
+      display: inline-flex; margin-top: var(--sp-sm); padding: 4px 12px; border-radius: var(--radius-pill);
+      background: var(--color-tint); color: var(--color-sub); font-size: var(--fs-label); font-weight: var(--fw-mid);
+    }
+    .state.active { background: rgba(232,129,74,.16); color: var(--color-accent); }
+    .choose {
+      width: 100%; border: none; border-radius: 16px; padding: 14px; margin-top: var(--sp-md);
+      font-size: var(--fs-body); font-weight: var(--fw-heavy); font-family: inherit;
+      background: var(--color-ink); color: var(--color-card);
+    }
+    .choose.active { background: var(--color-tint); color: var(--color-sub); }
+    .choose:disabled { background: var(--color-tint); color: var(--color-sub); }
+    .empty { text-align: center; color: var(--color-sub); font-size: var(--fs-body); line-height: 1.8; margin-top: var(--sp-xl); }
   </style>
 </head>
 <body>
   <main class="screen">
-  <div class="brand">
-    <div class="mascot is-idle logo" aria-hidden="true">
-      <span class="body"></span><span class="hand"></span>
-      <span class="eye l"></span><span class="eye r"></span><span class="mouth"></span>
-    </div>
-  </div>
-  <h1>给小暖换个声音和性子</h1>
-  <div class="sub">让小暖用你喜欢的人的嗓音和口吻陪你聊天</div>
+    <header class="head">
+      <div>
+        <h1>通话对象</h1>
+        <p class="sub">想和谁说话，就选谁</p>
+      </div>
+      <div class="mascot is-idle logo" aria-hidden="true">
+        <span class="body"></span><span class="hand"></span>
+        <span class="eye l"></span><span class="eye r"></span><span class="mouth"></span>
+      </div>
+    </header>
 
-  <!-- 第一步：建一个角色 -->
-  <div class="card">
-    <h2><span class="step-tag">1</span>新建一个角色</h2>
-    <label>角色名字（怎么称呼 TA）</label>
-    <input type="text" id="c-name" placeholder="比如：女儿小芳、老伴" maxlength="40" />
-    <label>和你的关系（选填）</label>
-    <input type="text" id="c-rel" placeholder="比如：女儿、老伴、老朋友" maxlength="40" />
-    <button class="btn" id="create-btn">创建角色</button>
-  </div>
-
-  <!-- 已建角色列表 + 每个角色的声音/灵魂配置 -->
-  <div class="card">
-    <h2>我的角色</h2>
-    <div id="roles"><div class="muted">加载中…</div></div>
-  </div>
+    <div id="companions"><div class="empty">加载中…</div></div>
 
     <nav class="tabbar" aria-label="主导航">
       <a class="tab" href="./index.html">
@@ -71,11 +57,11 @@
       </a>
       <a class="tab" href="./memories.html">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span>聊过的事</span>
+        <span>关心我的事</span>
       </a>
       <a class="tab active" href="./character.html">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-        <span>换个声音</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>通话对象</span>
       </a>
       <a class="tab" href="../index.html?pick=1">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>
@@ -89,142 +75,42 @@
   <script>
     const ELDER_ID = "elder-001";
     const API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
-    const BASE = `${API_BASE}/api/character/${ELDER_ID}`;
-    const pollTimers = {};
-
-    function esc(s) {
-      return String(s).replace(/[&<>"']/g, (c) =>
-        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    }
-    function toast(msg) {
-      const t = document.getElementById("toast");
-      t.textContent = msg; t.classList.add("show");
-      setTimeout(() => t.classList.remove("show"), 2200);
-    }
-    async function api(path, opts) {
-      const r = await fetch(`${BASE}${path}`, opts);
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.detail || "操作失败");
-      return data;
-    }
-
-    const voiceLabel = { none: "未克隆", training: "克隆中…", ready: "声音已就绪", failed: "克隆失败" };
-    const voiceCls = { none: "no", training: "wait", ready: "ok", failed: "no" };
-
-    function roleCard(c) {
-      const vCls = voiceCls[c.voice_status] || "no";
-      const vTxt = voiceLabel[c.voice_status] || "未克隆";
-      const pOk = c.persona_status === "ready";
-      const activeCls = c.is_active ? " active" : "";
-      const activeBadge = c.is_active ? '<span class="badge ok">正在使用</span>' : "";
-      return `
-      <div class="role${activeCls}" data-id="${c.id}">
-        <div><span class="name">${esc(c.name)}</span>${c.relation ? `<span class="rel">${esc(c.relation)}</span>` : ""}</div>
-        <div class="badges">
-          ${activeBadge}
-          <span class="badge ${vCls}">${vTxt}</span>
-          <span class="badge ${pOk ? "ok" : "no"}">${pOk ? "性子已学会" : "未学性子"}</span>
-        </div>
-
-        <label><span class="step-tag">2</span>克隆 TA 的声音</label>
-        <div class="hint">填入火山控制台拿到的音色代号（S_开头），再上传一段 TA 的清晰录音（10秒以上，≤10MB）。</div>
-        <input type="text" class="spk" placeholder="音色代号 S_xxxx" value="${esc(c.speaker_id || "")}" />
-        <input type="file" class="audio" accept=".wav,.mp3,.m4a,.aac,.ogg,.pcm" />
-        <button class="btn secondary do-voice">上传并开始克隆</button>
-
-        <label><span class="step-tag">3</span>学会 TA 的性子</label>
-        <div class="hint">粘贴一段 TA 平时说话/聊天的文字，小陪会学着用 TA 的口吻和性格陪你聊。</div>
-        <textarea class="corpus" placeholder="例如：闺女平时怎么跟你说话的，把那些话粘进来…"></textarea>
-        <button class="btn secondary do-persona">学习 TA 的性子</button>
-
-        <div class="row">
-          <button class="btn do-activate">${c.is_active ? "正在使用" : "用这个角色"}</button>
-          <button class="btn secondary do-delete">删除</button>
-        </div>
-      </div>`;
-    }
-
-    async function loadRoles() {
-      const box = document.getElementById("roles");
+    const box = document.getElementById("companions");
+    function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+    function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2000); }
+    async function load() {
       try {
-        const { items } = await api("");
-        if (!items || !items.length) {
-          box.innerHTML = '<div class="muted">还没有角色，先在上面创建一个吧～</div>';
-          return;
-        }
-        box.innerHTML = items.map(roleCard).join("");
-        items.forEach((c) => { if (c.voice_status === "training") startPoll(c.id); });
+        const data = await fetch(`${API_BASE}/api/elder/${ELDER_ID}/companions`).then((x) => x.json());
+        box.innerHTML = data.items.map((c) => `
+          <section class="companion ${c.is_active ? "active" : ""}">
+            <div class="name">${esc(c.name)}</div>
+            <div class="relation">${esc(c.relation || "通话对象")}</div>
+            <p class="copy">${esc(c.elder_copy)}</p>
+            <span class="state ${c.is_active ? "active" : ""}">${statusText(c)}</span>
+            <button class="choose ${c.is_active ? "active" : ""}" data-id="${c.id}" ${c.ready ? "" : "disabled"}>
+              ${c.is_active ? "正在使用" : c.ready ? `和${esc(c.name)}通话` : "等家人准备好"}
+            </button>
+          </section>`).join("");
+        box.querySelectorAll("button[data-id]").forEach((btn) => btn.addEventListener("click", () => choose(btn.dataset.id)));
       } catch (e) {
-        box.innerHTML = `<div class="muted">加载失败：${esc(e.message)}</div>`;
+        box.innerHTML = '<div class="empty">暂时没加载出来，等会儿再看看。</div>';
       }
     }
-
-    function startPoll(id) {
-      if (pollTimers[id]) return;
-      pollTimers[id] = setInterval(async () => {
-        try {
-          const { voice_status } = await api(`/${id}/voice`);
-          if (voice_status !== "training") {
-            clearInterval(pollTimers[id]); delete pollTimers[id];
-            toast(voice_status === "ready" ? "声音克隆好了！" : "声音克隆失败，请换段录音重试");
-            loadRoles();
-          }
-        } catch (_) { /* 轮询失败下次再试 */ }
-      }, 4000);
-    }
-
-    document.getElementById("create-btn").addEventListener("click", async () => {
-      const name = document.getElementById("c-name").value.trim();
-      const relation = document.getElementById("c-rel").value.trim();
-      if (!name) { toast("请先填角色名字"); return; }
+    async function choose(id) {
       try {
-        await api("", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, relation }) });
-        document.getElementById("c-name").value = ""; document.getElementById("c-rel").value = "";
-        toast("角色创建好了"); loadRoles();
-      } catch (e) { toast(e.message); }
-    });
-
-    document.getElementById("roles").addEventListener("click", async (ev) => {
-      const card = ev.target.closest(".role"); if (!card) return;
-      const id = card.dataset.id;
-
-      if (ev.target.classList.contains("do-voice")) {
-        const spk = card.querySelector(".spk").value.trim();
-        const file = card.querySelector(".audio").files[0];
-        if (!spk) { toast("请先填音色代号 S_xxx"); return; }
-        if (!file) { toast("请选择一段录音"); return; }
-        const fd = new FormData();
-        fd.append("speaker_id", spk); fd.append("audio", file);
-        ev.target.disabled = true; ev.target.textContent = "上传中…";
-        try {
-          await api(`/${id}/voice`, { method: "POST", body: fd });
-          toast("已开始克隆，请稍候…"); startPoll(id); loadRoles();
-        } catch (e) { toast(e.message); ev.target.disabled = false; ev.target.textContent = "上传并开始克隆"; }
+        await fetch(`${API_BASE}/api/elder/${ELDER_ID}/companions/${id}/activate`, { method: "POST" });
+        toast("好啦，已经换好了");
+        load();
+      } catch (e) {
+        toast("暂时没换成，请让家人看看");
       }
-
-      else if (ev.target.classList.contains("do-persona")) {
-        const corpus = card.querySelector(".corpus").value.trim();
-        if (!corpus) { toast("请先粘贴一段 TA 说话的文字"); return; }
-        ev.target.disabled = true; ev.target.textContent = "学习中…";
-        try {
-          await api(`/${id}/persona`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ corpus }) });
-          toast("小陪学会 TA 的性子了！"); loadRoles();
-        } catch (e) { toast(e.message); }
-        finally { ev.target.disabled = false; ev.target.textContent = "学习 TA 的性子"; }
-      }
-
-      else if (ev.target.classList.contains("do-activate")) {
-        try { await api(`/${id}/activate`, { method: "POST" }); toast("好啦，下次说话就用这个角色"); loadRoles(); }
-        catch (e) { toast(e.message); }
-      }
-
-      else if (ev.target.classList.contains("do-delete")) {
-        try { await api(`/${id}`, { method: "DELETE" }); toast("已删除"); loadRoles(); }
-        catch (e) { toast(e.message); }
-      }
-    });
-
-    loadRoles();
+    }
+    function statusText(companion) {
+      if (companion.is_active) return "正在使用";
+      if (companion.ready) return "可以通话";
+      return "家人正在准备";
+    }
+    load();
   </script>
 </body>
 </html>

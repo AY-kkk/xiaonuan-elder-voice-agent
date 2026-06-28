@@ -35,8 +35,12 @@ class CharacterService:
         self._persona = PersonaService(ark_cfg, usage_store=usage_store)
 
     # ---- 角色生命周期 ----
-    async def create(self, elder_id: str, name: str, relation: str = "") -> dict:
-        return await self._store.create(elder_id, name, relation)
+    async def create(
+        self, elder_id: str, name: str, relation: str = "", elder_alias: str = ""
+    ) -> dict:
+        return await self._store.create(
+            elder_id, name, relation, elder_alias=elder_alias, created_by="parent"
+        )
 
     async def list(self, elder_id: str) -> list:
         return await self._store.list(elder_id)
@@ -46,6 +50,60 @@ class CharacterService:
 
     async def delete(self, elder_id: str, char_id: int) -> None:
         await self._store.delete(elder_id, char_id)
+
+    async def sync_to_elder(self, elder_id: str, char_id: int) -> bool:
+        """把已就绪角色同步给老人端展示。"""
+        return await self._store.sync_to_elder(elder_id, char_id)
+
+    async def companions_for_elder(self, elder_id: str) -> dict:
+        """老人端轻量角色列表：只暴露可理解的陪伴对象，不暴露训练/技术字段。"""
+        roles = await self._store.list_for_elder(elder_id)
+        active = next((r for r in roles if r["is_active"]), None)
+        items = [
+            {
+                "id": 0,
+                "name": "小暖",
+                "relation": "默认通话对象",
+                "ready": True,
+                "is_active": active is None,
+                "elder_copy": "我一直在，想聊就点我",
+            }
+        ]
+        for role in roles:
+            items.append(
+                {
+                    "id": role["id"],
+                    "name": role["name"],
+                    "relation": role["relation"],
+                    "ready": role["voice_status"] == "ready" and role["persona_status"] == "ready",
+                    "is_active": role["is_active"],
+                    "elder_copy": _elder_copy(role),
+                }
+            )
+        notice_role = next(
+            (
+                r
+                for r in roles
+                if r["sync_status"] in ("synced", "active")
+                and not r.get("elder_notice_seen_at")
+            ),
+            None,
+        )
+        notice = None
+        if notice_role:
+            notice = {
+                "type": "new_character_ready",
+                "character_id": notice_role["id"],
+                "text": f"{notice_role['name']}给你准备了一个熟悉的声音，想让 TA 陪你说说话吗？",
+            }
+        return {
+            "active_character_id": active["id"] if active else 0,
+            "items": items,
+            "notice": notice,
+        }
+
+    async def mark_elder_notice_seen(self, elder_id: str, char_id: int) -> None:
+        await self._store.mark_notice_seen(elder_id, char_id)
 
     # ---- 声音克隆链路 ----
     async def train_voice(
@@ -121,3 +179,9 @@ class CharacterService:
         if char and char["persona_status"] == "ready" and char["persona_prompt"]:
             return char["persona_prompt"]
         return None
+
+
+def _elder_copy(role: dict) -> str:
+    if role["voice_status"] == "ready" and role["persona_status"] == "ready":
+        return f"{role['name']}的声音已经准备好了"
+    return f"家人正在准备{role['name']}的声音，准备好后会告诉你"

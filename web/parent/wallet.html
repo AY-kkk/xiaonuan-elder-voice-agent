@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>小暖 · 充值</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="../shared/mascot.css" />
+  <link rel="stylesheet" href="./parent.css" />
+</head>
+<body data-parent-page="wallet">
+  <main class="screen parent-screen">
+    <header class="head">
+      <div>
+        <h1>充值</h1>
+        <p class="sub">查看余额、预计陪伴分钟和充值记录</p>
+      </div>
+      <div class="mascot is-idle logo" aria-hidden="true">
+        <span class="body"></span><span class="hand"></span>
+        <span class="eye l"></span><span class="eye r"></span><span class="mouth"></span>
+      </div>
+    </header>
+
+    <section class="card" aria-label="余额">
+      <div class="card-head"><span class="card-title">当前余额</span></div>
+      <div class="cost" id="wallet-summary"><div class="empty">加载中...</div></div>
+      <p class="helper" id="wallet-note"></p>
+      <div class="role-actions" style="margin-top: var(--sp-md);">
+        <button class="btn primary" data-recharge="5000">充值 ¥50</button>
+        <button class="btn" data-recharge="10000">充值 ¥100</button>
+      </div>
+    </section>
+
+    <section class="card" aria-label="计费说明">
+      <div class="card-head"><span class="card-title">计费说明</span></div>
+      <div id="billing-rules"><div class="empty">加载中...</div></div>
+    </section>
+
+    <section class="card" aria-label="充值记录">
+      <div class="card-head"><span class="card-title">充值记录</span></div>
+      <div id="transactions"><div class="empty">加载中...</div></div>
+    </section>
+
+    <p class="privacy">这里是模拟充值记录，真实支付接入后以账单为准</p>
+    <div id="parent-nav"></div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="./config.js"></script>
+  <script src="./shared.js"></script>
+  <script src="./nav.js"></script>
+  <script>
+    const {
+      ELDER_ID,
+      parentApi,
+      escapeHtml,
+      toast,
+      fetchJson,
+      formatTime,
+      yuan,
+    } = window.ParentShared;
+
+    async function loadWallet() {
+      const summary = document.getElementById("wallet-summary");
+      const note = document.getElementById("wallet-note");
+      const rulesBox = document.getElementById("billing-rules");
+      const txBox = document.getElementById("transactions");
+      try {
+        const wallet = await fetchJson(parentApi(`${ELDER_ID}/wallet`));
+        summary.innerHTML = `
+          <div class="item"><div class="num">${yuan(wallet.balance_cents)}</div><div class="lbl">当前余额</div></div>
+          <div class="item"><div class="num calls">${wallet.estimated_voice_minutes || 0}</div><div class="lbl">预计可陪伴分钟</div></div>`;
+        note.textContent = `本月关怀分析 ${wallet.usage ? wallet.usage.care_analysis_calls : 0} 次。`;
+        renderRules(wallet.billing_rules || []);
+        renderTransactions(wallet.transactions || []);
+      } catch (error) {
+        summary.innerHTML = '<div class="empty">余额加载失败。</div>';
+        rulesBox.innerHTML = '<div class="empty">计费说明加载失败。</div>';
+        txBox.innerHTML = '<div class="empty">充值记录加载失败。</div>';
+      }
+    }
+
+    function renderRules(rules) {
+      const rulesBox = document.getElementById("billing-rules");
+      if (!rules.length) {
+        rulesBox.innerHTML = '<div class="empty">暂无计费说明。</div>';
+        return;
+      }
+      rulesBox.innerHTML = rules.map((rule) => `
+        <div class="tx-row">
+          <div class="fact-name">${escapeHtml(rule.display_name || rule.item_code)}：${yuan(rule.price_cents)} / ${escapeHtml(rule.unit)}</div>
+          <div class="tx-meta">实际扣费以服务账单为准</div>
+        </div>`).join("");
+    }
+
+    function renderTransactions(transactions) {
+      const txBox = document.getElementById("transactions");
+      if (!transactions.length) {
+        txBox.innerHTML = '<div class="empty">暂无充值记录。</div>';
+        return;
+      }
+      txBox.innerHTML = transactions.map((item) => `
+        <div class="tx-row">
+          <div class="fact-name">${escapeHtml(item.title || "充值")} · ${yuan(item.amount_cents)}</div>
+          <div class="tx-meta">${formatTime(item.created_at)} · ${escapeHtml(item.detail || "")}</div>
+        </div>`).join("");
+    }
+
+    async function recharge(amount) {
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/recharge`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount_cents: Number(amount) }),
+        });
+        toast("充值已到账");
+        loadWallet();
+      } catch (error) {
+        toast(error.message || "充值失败");
+      }
+    }
+
+    document.querySelectorAll("button[data-recharge]").forEach((button) => {
+      button.addEventListener("click", () => recharge(button.dataset.recharge));
+    });
+    loadWallet();
+  </script>
+</body>
+</html>

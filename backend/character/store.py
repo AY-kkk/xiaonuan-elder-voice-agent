@@ -19,6 +19,7 @@ import aiosqlite
 
 VOICE_STATUSES = ("none", "training", "ready", "failed")
 PERSONA_STATUSES = ("none", "ready")
+SYNC_STATUSES = ("draft", "ready", "synced", "active", "failed")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -31,16 +32,25 @@ CREATE TABLE IF NOT EXISTS characters (
     persona_prompt  TEXT NOT NULL DEFAULT '',
     persona_status  TEXT NOT NULL DEFAULT 'none',
     is_active       INTEGER NOT NULL DEFAULT 0,
+    created_by      TEXT NOT NULL DEFAULT 'parent',
+    sync_status     TEXT NOT NULL DEFAULT 'draft',
+    synced_at       REAL,
+    elder_notice_seen_at REAL,
+    display_order   INTEGER NOT NULL DEFAULT 0,
+    elder_alias     TEXT NOT NULL DEFAULT '',
+    avoid_phrases   TEXT NOT NULL DEFAULT '[]',
     created_at      REAL NOT NULL,
     updated_at      REAL NOT NULL,
     UNIQUE(elder_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_char_elder ON characters(elder_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_char_elder_sync ON characters(elder_id, sync_status, display_order);
 """
 
 _COLUMNS = (
     "id, elder_id, name, relation, speaker_id, voice_status, "
-    "persona_prompt, persona_status, is_active, created_at, updated_at"
+    "persona_prompt, persona_status, is_active, created_by, sync_status, synced_at, "
+    "elder_notice_seen_at, display_order, elder_alias, avoid_phrases, created_at, updated_at"
 )
 
 
@@ -53,9 +63,33 @@ class CharacterStore:
     async def ensure_schema(self) -> None:
         async with aiosqlite.connect(self._db_path) as db:
             await db.executescript(_SCHEMA)
+            await self._migrate(db)
             await db.commit()
 
-    async def create(self, elder_id: str, name: str, relation: str = "") -> dict:
+    async def _migrate(self, db: aiosqlite.Connection) -> None:
+        cols = await _column_names(db, "characters")
+        additions = {
+            "created_by": "ALTER TABLE characters ADD COLUMN created_by TEXT NOT NULL DEFAULT 'parent'",
+            "sync_status": "ALTER TABLE characters ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'draft'",
+            "synced_at": "ALTER TABLE characters ADD COLUMN synced_at REAL",
+            "elder_notice_seen_at": "ALTER TABLE characters ADD COLUMN elder_notice_seen_at REAL",
+            "display_order": "ALTER TABLE characters ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0",
+            "elder_alias": "ALTER TABLE characters ADD COLUMN elder_alias TEXT NOT NULL DEFAULT ''",
+            "avoid_phrases": "ALTER TABLE characters ADD COLUMN avoid_phrases TEXT NOT NULL DEFAULT '[]'",
+        }
+        for name, sql in additions.items():
+            if name not in cols:
+                await db.execute(sql)
+
+    async def create(
+        self,
+        elder_id: str,
+        name: str,
+        relation: str = "",
+        *,
+        elder_alias: str = "",
+        created_by: str = "parent",
+    ) -> dict:
         """新建角色（声音/人格均未就绪）。重名返回已有角色（幂等友好）。"""
         name = (name or "").strip()
         if not name:
@@ -64,8 +98,17 @@ class CharacterStore:
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(
                 "INSERT OR IGNORE INTO characters"
-                "(elder_id, name, relation, created_at, updated_at) VALUES(?,?,?,?,?)",
-                (elder_id, name, (relation or "").strip(), now, now),
+                "(elder_id, name, relation, elder_alias, created_by, created_at, updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (
+                    elder_id,
+                    name,
+                    (relation or "").strip(),
+                    (elder_alias or "").strip(),
+                    (created_by or "parent").strip() or "parent",
+                    now,
+                    now,
+                ),
             )
             await db.commit()
         existing = await self.get_by_name(elder_id, name)
@@ -78,7 +121,19 @@ class CharacterStore:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 f"SELECT {_COLUMNS} FROM characters WHERE elder_id=? "
-                "ORDER BY is_active DESC, updated_at DESC",
+                "ORDER BY is_active DESC, display_order ASC, updated_at DESC",
+                (elder_id,),
+            )
+            return [_row_to_dict(r) for r in await cur.fetchall()]
+
+    async def list_for_elder(self, elder_id: str) -> List[dict]:
+        """老人端可见角色：只返回已同步/当前启用的角色。"""
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                f"SELECT {_COLUMNS} FROM characters WHERE elder_id=? "
+                "AND sync_status IN ('synced','active') "
+                "ORDER BY is_active DESC, display_order ASC, synced_at DESC, updated_at DESC",
                 (elder_id,),
             )
             return [_row_to_dict(r) for r in await cur.fetchall()]
@@ -124,6 +179,7 @@ class CharacterStore:
                 (speaker_id, status, time.time(), elder_id, char_id),
             )
             await db.commit()
+        await self._refresh_readiness(elder_id, char_id)
 
     async def update_persona(self, elder_id: str, char_id: int, *, prompt: str, status: str) -> None:
         if status not in PERSONA_STATUSES:
@@ -133,6 +189,46 @@ class CharacterStore:
                 "UPDATE characters SET persona_prompt=?, persona_status=?, updated_at=? "
                 "WHERE elder_id=? AND id=?",
                 (prompt, status, time.time(), elder_id, char_id),
+            )
+            await db.commit()
+        await self._refresh_readiness(elder_id, char_id)
+
+    async def _refresh_readiness(self, elder_id: str, char_id: int) -> None:
+        """声音与人格都就绪时，把草稿推进到 ready；已同步/启用状态不回退。"""
+        char = await self.get(elder_id, char_id)
+        if not char:
+            return
+        if char["sync_status"] in ("synced", "active"):
+            return
+        target = "ready" if char["voice_status"] == "ready" and char["persona_status"] == "ready" else "draft"
+        if target != char["sync_status"]:
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute(
+                    "UPDATE characters SET sync_status=?, updated_at=? WHERE elder_id=? AND id=?",
+                    (target, time.time(), elder_id, char_id),
+                )
+                await db.commit()
+
+    async def sync_to_elder(self, elder_id: str, char_id: int) -> bool:
+        """同步给老人端。只有声音和人格都 ready 的角色可同步。"""
+        char = await self.get(elder_id, char_id)
+        if not char or char["voice_status"] != "ready" or char["persona_status"] != "ready":
+            return False
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "UPDATE characters SET sync_status='synced', synced_at=?, elder_notice_seen_at=NULL, updated_at=? "
+                "WHERE elder_id=? AND id=?",
+                (time.time(), time.time(), elder_id, char_id),
+            )
+            await db.commit()
+        return True
+
+    async def mark_notice_seen(self, elder_id: str, char_id: int) -> None:
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "UPDATE characters SET elder_notice_seen_at=COALESCE(elder_notice_seen_at, ?) "
+                "WHERE elder_id=? AND id=?",
+                (time.time(), elder_id, char_id),
             )
             await db.commit()
 
@@ -149,11 +245,11 @@ class CharacterStore:
             if await cur.fetchone() is None:
                 return False
             await db.execute(
-                "UPDATE characters SET is_active=0, updated_at=? WHERE elder_id=?",
+                "UPDATE characters SET is_active=0, sync_status=CASE WHEN sync_status='active' THEN 'synced' ELSE sync_status END, updated_at=? WHERE elder_id=?",
                 (time.time(), elder_id),
             )
             await db.execute(
-                "UPDATE characters SET is_active=1, updated_at=? WHERE elder_id=? AND id=?",
+                "UPDATE characters SET is_active=1, sync_status='active', updated_at=? WHERE elder_id=? AND id=?",
                 (time.time(), elder_id, char_id),
             )
             await db.commit()
@@ -163,7 +259,7 @@ class CharacterStore:
         """取消启用所有角色（回落默认音色/人设）。"""
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(
-                "UPDATE characters SET is_active=0, updated_at=? WHERE elder_id=?",
+                "UPDATE characters SET is_active=0, sync_status=CASE WHEN sync_status='active' THEN 'synced' ELSE sync_status END, updated_at=? WHERE elder_id=?",
                 (time.time(), elder_id),
             )
             await db.commit()
@@ -179,4 +275,28 @@ class CharacterStore:
 def _row_to_dict(row: aiosqlite.Row) -> dict:
     d = dict(row)
     d["is_active"] = bool(d.get("is_active"))
+    d["human_status"] = _human_status(d)
     return d
+
+
+def _human_status(role: dict) -> str:
+    if role.get("is_active"):
+        return "正在作为通话对象"
+    if role.get("sync_status") == "synced":
+        return "已同步到老人端"
+    if role.get("sync_status") == "ready":
+        return "可同步到老人端"
+    if role.get("voice_status") == "training":
+        return "正在学习声音"
+    if role.get("voice_status") == "failed" or role.get("sync_status") == "failed":
+        return "需要重新处理"
+    if role.get("persona_status") == "ready":
+        return "还差声音"
+    if role.get("voice_status") == "ready":
+        return "还差说话方式"
+    return "准备中"
+
+
+async def _column_names(db: aiosqlite.Connection, table: str) -> set:
+    cursor = await db.execute(f"PRAGMA table_info({table})")
+    return {row[1] for row in await cursor.fetchall()}

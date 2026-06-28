@@ -31,6 +31,8 @@ async def _test_store_and_context() -> None:
     facts = await store.list_key_facts(ELDER)
     assert len(facts) == 3, f"层级A去重失败：{facts}"
     assert any(f["category"] == "其他" for f in facts), "非法分类未回落到其他"
+    dialog_facts = [f for f in facts if f["source"] == "dialog"]
+    assert all(f["status"] == "pending" for f in dialog_facts), facts
 
     # 层级 B：插入 + 近优读取
     for i in range(3):
@@ -46,7 +48,12 @@ async def _test_store_and_context() -> None:
     service = MemoryService(store, ark_off)
     prompt, ctx = await service.build_context(ELDER)
     assert "小陪" in prompt and "重点事项" in prompt and "膝盖疼" in prompt, prompt
+    assert "有高血压" not in prompt, "待确认的对话识别重点事项不应注入 prompt"
     assert ctx == []
+    pending = next(f for f in facts if f["category"] == "慢病")
+    await store.update_key_fact_status(ELDER, pending["id"], "active", expires_days=365)
+    prompt, _ = await service.build_context(ELDER)
+    assert "有高血压" in prompt, "确认后的重点事项应注入 prompt"
     print("[PASS] store 读写 + 上下文拼装")
     print("---- 注入的 system_prompt 预览 ----")
     print(prompt)

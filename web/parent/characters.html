@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>小暖 · 角色生成</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="../shared/mascot.css" />
+  <link rel="stylesheet" href="./parent.css" />
+</head>
+<body data-parent-page="characters">
+  <main class="screen parent-screen">
+    <header class="head">
+      <div>
+        <h1>角色生成</h1>
+        <p class="sub">家人准备声音和说话方式，准备好后同步给长辈选择</p>
+      </div>
+      <div class="mascot is-idle logo" aria-hidden="true">
+        <span class="body"></span><span class="hand"></span>
+        <span class="eye l"></span><span class="eye r"></span><span class="mouth"></span>
+      </div>
+    </header>
+
+    <section class="card" aria-label="创建角色">
+      <div class="card-head"><span class="card-title">创建角色</span></div>
+      <form class="form" id="role-form">
+        <input id="role-name" placeholder="角色名字，如：女儿小芳" maxlength="40" />
+        <input id="role-relation" placeholder="和长辈的关系，如：女儿、老伴" maxlength="40" />
+        <input id="role-alias" placeholder="长辈平时怎么称呼 TA，如：小芳" maxlength="40" />
+        <button class="btn primary" type="submit">创建角色</button>
+      </form>
+    </section>
+
+    <section class="card" aria-label="角色列表">
+      <div class="card-head"><span class="card-title">角色列表</span></div>
+      <p class="helper">声音和说话方式都准备好后，才能同步给老人端。</p>
+      <div id="roles"><div class="empty">加载中...</div></div>
+    </section>
+
+    <p class="privacy">上传内容只用于本家庭陪伴，不在老人端展示技术状态</p>
+    <div id="parent-nav"></div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="./config.js"></script>
+  <script src="./shared.js"></script>
+  <script src="./nav.js"></script>
+  <script>
+    const {
+      ELDER_ID,
+      parentApi,
+      escapeHtml,
+      toast,
+      fetchJson,
+      roleStateText,
+    } = window.ParentShared;
+
+    async function loadRoles() {
+      const box = document.getElementById("roles");
+      try {
+        const { items = [] } = await fetchJson(parentApi(`${ELDER_ID}/characters`));
+        if (!items.length) {
+          box.innerHTML = '<div class="empty">还没有角色。先创建一个，再准备声音和说话方式。</div>';
+          return;
+        }
+        box.innerHTML = items.map((role) => `
+          <div class="role" data-id="${role.id}">
+            <div class="role-name">${escapeHtml(role.name)}${role.relation ? ` · ${escapeHtml(role.relation)}` : ""}</div>
+            <div class="role-meta">${escapeHtml(roleStateText(role))}</div>
+
+            <form class="form voice-form">
+              <input name="voice_code" placeholder="音色代号 S_xxx" value="${escapeHtml(role.speaker_id || "")}" />
+              <input name="audio" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.pcm" />
+              <p class="helper">授权录音支持 wav/mp3/m4a/aac/ogg/pcm，单个文件不超过 50MB。</p>
+              <label class="check">
+                <input name="auth" type="checkbox" />
+                我确认已获得该声音本人或合法代理人的授权，仅用于陪伴本家庭老人。
+              </label>
+              <button class="btn primary" type="submit">上传授权录音</button>
+            </form>
+
+            <form class="form persona-form">
+              <input name="elder_call_name" placeholder="TA 平时怎么称呼老人，如：爸、妈" maxlength="80" />
+              <input name="tone" placeholder="TA 的语气，如：温柔、直接、爱叮嘱" maxlength="120" />
+              <textarea name="common_words" placeholder="TA 常说的话"></textarea>
+              <textarea name="avoid_topics" placeholder="TA 不应该主动提起的话"></textarea>
+              <input name="chat_record" type="file" accept=".txt,.md,.markdown,.json,.csv,.html,.htm,.docx,.xlsx,.pdf" />
+              <p class="helper">可上传聊天记录：txt、md、json、csv、html、docx、xlsx、pdf。系统会提炼说话方式，不保存原文件。</p>
+              <button class="btn primary" type="submit">生成说话方式</button>
+            </form>
+
+            <div class="role-actions">
+              <button class="btn" data-refresh="${role.id}">刷新准备状态</button>
+              <button class="btn primary" data-sync="${role.id}">同步给老人端</button>
+              <button class="btn" data-activate-role="${role.id}">设为当前通话对象</button>
+              <button class="danger-btn" data-delete-role="${role.id}">删除</button>
+            </div>
+          </div>`).join("");
+        bindRoleActions(box);
+      } catch (error) {
+        box.innerHTML = '<div class="empty">角色加载失败。</div>';
+      }
+    }
+
+    function bindRoleActions(box) {
+      box.querySelectorAll(".voice-form").forEach((form) => {
+        form.addEventListener("submit", uploadVoice);
+      });
+      box.querySelectorAll(".persona-form").forEach((form) => {
+        form.addEventListener("submit", generatePersona);
+      });
+      box.querySelectorAll("button[data-refresh]").forEach((button) => {
+        button.addEventListener("click", () => refreshVoice(button.dataset.refresh));
+      });
+      box.querySelectorAll("button[data-sync]").forEach((button) => {
+        button.addEventListener("click", () => syncRole(button.dataset.sync));
+      });
+      box.querySelectorAll("button[data-activate-role]").forEach((button) => {
+        button.addEventListener("click", () => activateRole(button.dataset.activateRole));
+      });
+      box.querySelectorAll("button[data-delete-role]").forEach((button) => {
+        button.addEventListener("click", () => deleteRole(button.dataset.deleteRole));
+      });
+    }
+
+    async function createRole(event) {
+      event.preventDefault();
+      const name = document.getElementById("role-name").value.trim();
+      if (!name) {
+        toast("请填写角色名字");
+        return;
+      }
+      const body = {
+        name,
+        relation: document.getElementById("role-relation").value.trim(),
+        elder_alias: document.getElementById("role-alias").value.trim(),
+      };
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/characters`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        document.getElementById("role-form").reset();
+        toast("角色已创建");
+        loadRoles();
+      } catch (error) {
+        toast(error.message || "创建失败");
+      }
+    }
+
+    async function uploadVoice(event) {
+      event.preventDefault();
+      const card = event.target.closest(".role");
+      const voiceCode = event.target.elements.voice_code.value.trim();
+      const audioFile = event.target.elements.audio.files[0];
+      const authorized = event.target.elements.auth.checked;
+      if (!voiceCode) {
+        toast("请填写音色代号");
+        return;
+      }
+      if (!audioFile) {
+        toast("请选择录音文件");
+        return;
+      }
+      if (!authorized) {
+        toast("请先确认授权");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("speaker_id", voiceCode);
+      formData.append("audio", audioFile);
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/characters/${card.dataset.id}/voice`), {
+          method: "POST",
+          body: formData,
+        });
+        toast("已开始准备声音");
+        loadRoles();
+      } catch (error) {
+        toast(error.message || "上传失败");
+      }
+    }
+
+    async function generatePersona(event) {
+      event.preventDefault();
+      const card = event.target.closest(".role");
+      const form = event.target;
+      const chatRecord = form.elements.chat_record.files[0];
+      const hasManualInput = [
+        form.elements.elder_call_name.value,
+        form.elements.tone.value,
+        form.elements.common_words.value,
+        form.elements.avoid_topics.value,
+      ].some((value) => value.trim());
+      if (!hasManualInput && !chatRecord) {
+        toast("请填写说话方式或上传聊天记录");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("elder_call_name", form.elements.elder_call_name.value.trim());
+      formData.append("tone", form.elements.tone.value.trim());
+      formData.append("common_words", form.elements.common_words.value.trim());
+      formData.append("avoid_topics", form.elements.avoid_topics.value.trim());
+      if (chatRecord) formData.append("chat_record", chatRecord);
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/characters/${card.dataset.id}/persona_upload`), {
+          method: "POST",
+          body: formData,
+        });
+        toast("说话方式已生成");
+        loadRoles();
+      } catch (error) {
+        toast(error.message || "生成失败");
+      }
+    }
+
+    async function refreshVoice(id) {
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/characters/${id}/voice`));
+        toast("状态已刷新");
+        loadRoles();
+      } catch (error) {
+        toast(error.message || "刷新失败");
+      }
+    }
+
+    async function syncRole(id) {
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/characters/${id}/sync`), { method: "POST" });
+        toast("已同步给老人端");
+        loadRoles();
+      } catch (error) {
+        toast(error.message || "声音和说话方式都准备好后才能同步");
+      }
+    }
+
+    async function activateRole(id) {
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/characters/${id}/activate`), { method: "POST" });
+        toast("已设为当前通话对象");
+        loadRoles();
+      } catch (error) {
+        toast(error.message || "设置失败");
+      }
+    }
+
+    async function deleteRole(id) {
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/characters/${id}`), { method: "DELETE" });
+        toast("已删除");
+        loadRoles();
+      } catch (error) {
+        toast(error.message || "删除失败");
+      }
+    }
+
+    document.getElementById("role-form").addEventListener("submit", createRole);
+    loadRoles();
+  </script>
+</body>
+</html>

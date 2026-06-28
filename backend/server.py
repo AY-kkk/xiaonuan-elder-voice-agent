@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from .config import load_config
+from .config import AppConfig, load_config
 from .engine.factory import create_engine
+from .jobs import BackgroundJobService
 from .memory import MemoryService, MemoryStore
 from .signals import SignalService
 from .usage import UsageStore
@@ -28,6 +30,45 @@ from .session.manager import ConversationSession
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("gateway")
+
+
+@dataclass
+class AppContainer:
+    cfg: AppConfig
+    usage_store: UsageStore
+    memory_store: MemoryStore
+    memory: MemoryService
+    signals: SignalService
+    character_store: CharacterStore
+    character: CharacterService
+    jobs: BackgroundJobService
+
+
+def build_container(config: AppConfig | None = None) -> AppContainer:
+    """构建服务容器。
+
+    目前仍保留 module-level app 兼容 `backend.server:app`，但所有服务实例从这里
+    集中创建，测试或后续拆分部署时可以替换 config 后复用同一装配路径。
+    """
+    c = config or load_config()
+    usage_store = UsageStore(c.db_path)
+    memory_store = MemoryStore(c.db_path)
+    memory = MemoryService(memory_store, c.ark, usage_store=usage_store)
+    signals = SignalService(c.db_path, c.ark, usage_store=usage_store)
+    character_store = CharacterStore(c.db_path)
+    character = CharacterService(character_store, c.volc, c.ark, usage_store=usage_store)
+    jobs = BackgroundJobService(c.db_path)
+    return AppContainer(
+        cfg=c,
+        usage_store=usage_store,
+        memory_store=memory_store,
+        memory=memory,
+        signals=signals,
+        character_store=character_store,
+        character=character,
+        jobs=jobs,
+    )
+
 
 cfg = load_config()
 app = FastAPI(title="老年陪伴语音 Agent 后端")
@@ -42,18 +83,16 @@ if cfg.cors_origins:
         allow_headers=["*"],
     )
 
-# 方舟 LLM 用量记账（成本可观测，只记 token 不记对话内容）
-_usage_store = UsageStore(cfg.db_path)
-# L3 分层记忆服务（层级 A/B 读写 + 异步蒸馏）
-_memory_store = MemoryStore(cfg.db_path)
-_memory = MemoryService(_memory_store, cfg.ark, usage_store=_usage_store)
-# L4 子女端信号服务（规则引擎 + 隐私友好摘要）
-_signals = SignalService(cfg.db_path, cfg.ark, usage_store=_usage_store)
-# 角色再生服务（声音克隆 + 人格蒸馏）：让老人喜爱对象的声音与口吻陪伴老人
-_character_store = CharacterStore(cfg.db_path)
-_character = CharacterService(_character_store, cfg.volc, cfg.ark, usage_store=_usage_store)
-parent_api.bind(_memory_store, _signals, _usage_store, cfg.ark_price_per_mtoken)
-elder_api.bind(_memory_store)
+_container = build_container(cfg)
+_usage_store = _container.usage_store
+_memory_store = _container.memory_store
+_memory = _container.memory
+_signals = _container.signals
+_character_store = _container.character_store
+_character = _container.character
+_jobs = _container.jobs
+parent_api.bind(_memory_store, _signals, _usage_store, cfg.ark_price_per_mtoken, _character)
+elder_api.bind(_memory_store, _character)
 character_api.bind(_character)
 app.include_router(parent_api.router)
 app.include_router(elder_api.router)
@@ -74,6 +113,7 @@ async def _init_db() -> None:
     await _signals.ensure_schema()
     await _usage_store.ensure_schema()
     await _character_store.ensure_schema()
+    await _jobs.ensure_schema()
 
 
 @app.on_event("startup")
@@ -91,8 +131,8 @@ def _on_session_end(elder_id: str):
     """会话结束钩子：异步触发蒸馏 + 信号生成，立即返回不阻塞（PRD 8.2 解耦）。"""
 
     async def _handler(transcript: list) -> None:
-        asyncio.create_task(_memory.distill(elder_id, transcript))
-        asyncio.create_task(_signals.generate(elder_id, transcript))
+        _jobs.submit(elder_id, "memory_distill", lambda: _memory.distill(elder_id, transcript))
+        _jobs.submit(elder_id, "signal_generate", lambda: _signals.generate(elder_id, transcript))
 
     return _handler
 
@@ -167,6 +207,12 @@ async def elder_ws(ws: WebSocket, elder_id: str) -> None:
     finally:
         await session.stop()
         recv_task.cancel()
+        try:
+            await recv_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.debug("接收任务已随 WebSocket 断开结束", exc_info=True)
 
 
 @app.get("/healthz")
@@ -178,6 +224,9 @@ async def healthz() -> dict:
     """
     volc_ready = _probe_volc_ready()
     degraded = cfg.engine == "seeduplex" and not volc_ready
+    background_job_failures_24h = await _jobs.recent_failures()
+    if background_job_failures_24h:
+        degraded = True
     return {
         "status": "degraded" if degraded else "ok",
         "engine": cfg.engine,
@@ -185,6 +234,8 @@ async def healthz() -> dict:
         "ark_enabled": cfg.ark.enabled,
         "model": cfg.volc.model_version,
         "speaker": cfg.volc.speaker,
+        "background_job_failures_24h": background_job_failures_24h,
+        "last_background_job_failure": await _jobs.last_failure(),
     }
 
 

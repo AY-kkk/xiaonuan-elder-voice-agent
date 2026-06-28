@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS signals (
     mood        TEXT NOT NULL,
     mood_score  INTEGER NOT NULL DEFAULT 0,   -- 情绪数值化：积极+1/平稳0/低落-1，供趋势预测
     mentions    TEXT NOT NULL DEFAULT '[]',   -- JSON: [{"topic","count"}]
+    confidence  REAL NOT NULL DEFAULT 0.8,
+    review_required INTEGER NOT NULL DEFAULT 0,
+    review_reason TEXT NOT NULL DEFAULT '',
     summary     TEXT NOT NULL,
     created_at  REAL NOT NULL
 );
@@ -81,6 +84,18 @@ class SignalService:
             await db.execute(
                 "ALTER TABLE signals ADD COLUMN mood_score INTEGER NOT NULL DEFAULT 0"
             )
+        if "confidence" not in cols:
+            await db.execute(
+                "ALTER TABLE signals ADD COLUMN confidence REAL NOT NULL DEFAULT 0.8"
+            )
+        if "review_required" not in cols:
+            await db.execute(
+                "ALTER TABLE signals ADD COLUMN review_required INTEGER NOT NULL DEFAULT 0"
+            )
+        if "review_reason" not in cols:
+            await db.execute(
+                "ALTER TABLE signals ADD COLUMN review_reason TEXT NOT NULL DEFAULT ''"
+            )
 
     async def generate(self, elder_id: str, transcript: List[dict]) -> Optional[dict]:
         """会话结束后生成并落库信号。失败不抛（不影响主流程）。"""
@@ -99,7 +114,7 @@ class SignalService:
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT level, mood, mentions, summary, created_at FROM signals "
+                "SELECT level, mood, mentions, confidence, review_required, review_reason, summary, created_at FROM signals "
                 "WHERE elder_id=? ORDER BY created_at DESC LIMIT ?",
                 (elder_id, limit),
             )
@@ -108,6 +123,7 @@ class SignalService:
             for r in rows:
                 item = dict(r)
                 item["mentions"] = json.loads(item["mentions"] or "[]")
+                item["review_required"] = bool(item.get("review_required"))
                 out.append(item)
             return out
 
@@ -138,14 +154,17 @@ class SignalService:
         mood_score = _MOOD_SCORE.get(result["mood"], 0)
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(
-                "INSERT INTO signals(elder_id, level, mood, mood_score, mentions, summary, created_at) "
-                "VALUES(?,?,?,?,?,?,?)",
+                "INSERT INTO signals(elder_id, level, mood, mood_score, mentions, confidence, review_required, review_reason, summary, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (
                     elder_id,
                     result["level"],
                     result["mood"],
                     mood_score,
                     json.dumps(result["mentions"], ensure_ascii=False),
+                    float(result.get("confidence", 0.8)),
+                    1 if result.get("review_required") else 0,
+                    result.get("review_reason", ""),
                     summary,
                     time.time(),
                 ),

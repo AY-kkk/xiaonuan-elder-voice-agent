@@ -50,6 +50,15 @@ async def _test_store_and_cost() -> None:
 
     recent = await store.recent(ELDER)
     _check("明细只返回本 elder", len(recent) == 2 and all("total_tokens" in r for r in recent))
+    wallet = await store.wallet(ELDER)
+    _check("钱包默认余额为 0", wallet["balance_cents"] == 0)
+    await store.recharge(ELDER, 5000, title="测试充值", detail="unit")
+    wallet = await store.wallet(ELDER)
+    _check("充值后余额增加", wallet["balance_cents"] == 5000, str(wallet))
+    tx = await store.wallet_transactions(ELDER)
+    _check("充值记录落库", len(tx) == 1 and tx[0]["amount_cents"] == 5000, str(tx))
+    rules = await store.billing_rules()
+    _check("计费规则已初始化", any(r["item_code"] == "voice_minute" for r in rules))
     print(f"  本月汇总：{s['total_tokens']} token / {s['calls']} 次 / 约 ¥{cost}")
 
 

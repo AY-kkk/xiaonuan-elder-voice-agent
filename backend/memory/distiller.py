@@ -26,14 +26,17 @@ logger = logging.getLogger(__name__)
 _BASE_PERSONA = (
     "你是老人的语音陪伴伙伴，名字叫小陪。说话温和、亲切、有耐心，像家里晚辈陪长辈聊天，"
     "语速放慢、用短句。多关心老人的身体、情绪和日常，不做医疗诊断，遇到健康问题温柔建议就医。"
+    "使用记忆时要克制：重点事项可以主动关照，生活记忆只在自然相关时轻轻提起，不要反复追问旧事。"
 )
 
 _DISTILL_SYSTEM = (
     "你是记忆整理助手。请阅读一段老人与陪伴 AI 的对话，提炼值得长期记住的信息。"
     "只输出 JSON，不要解释。格式："
-    '{"life_memories": ["近况/偏好/情绪/家常，每条一句话"], '
-    '"key_facts": [{"category": "用药|慢病|忌口|重要日期|紧急联系人|其他", "content": "一句话"}]}。'
-    "没有可提炼的就给空数组。不要编造对话里没有的信息。"
+    '{"life_memories": [{"content": "近况/偏好/情绪/家常，每条一句话", "confidence": 0.0到1.0}], '
+    '"key_facts": [{"category": "用药|慢病|忌口|重要日期|紧急联系人|其他", '
+    '"content": "一句话", "confidence": 0.0到1.0}]}。'
+    "没有可提炼的就给空数组。只保留老人本人相关、未来照护有用的信息；"
+    "临时情绪、疑似听错、第三方故事给低置信度。不要编造对话里没有的信息。"
 )
 
 
@@ -70,7 +73,7 @@ class MemoryService:
           - 隐私边界：这里只读蒸馏后的结构化记忆，绝不读取/拼接任何原始对话句子。
         """
         try:
-            key_facts = await self._store.list_key_facts(elder_id)
+            key_facts = await self._store.active_key_facts(elder_id)
             life = await self._store.recent_life_memories(elder_id, limit=15)
         except Exception:
             logger.exception("读取记忆失败，使用空记忆（不影响通话）")
@@ -79,10 +82,14 @@ class MemoryService:
         parts = [_BASE_PERSONA]
         if key_facts:
             lines = [f"- [{f['category']}] {f['content']}" for f in key_facts]
-            parts.append("【需要特别记住并主动关照的重点事项】\n" + "\n".join(lines))
+            parts.append(
+                "【重点事项：需要主动关照，但不要替代医生或家属做决定】\n" + "\n".join(lines)
+            )
         if life:
             lines = [f"- {m}" for m in life]
-            parts.append("【最近聊到的事，可自然提起以示在乎】\n" + "\n".join(lines))
+            parts.append(
+                "【生活记忆：只在话题自然相关时作为背景，不要每次都主动提】\n" + "\n".join(lines)
+            )
         return "\n\n".join(parts), []
 
     async def distill(self, elder_id: str, transcript: List[dict]) -> None:
@@ -108,8 +115,14 @@ class MemoryService:
             logger.exception("蒸馏失败（已忽略，下次仍用已有记忆）")
 
     async def _persist(self, elder_id: str, result: dict) -> None:
-        for mem in _as_str_list(result.get("life_memories")):
-            await self._store.add_life_memory(elder_id, mem)
+        for mem in _memory_items(result.get("life_memories")):
+            await self._store.add_life_memory(
+                elder_id,
+                mem["content"],
+                source="dialog",
+                confidence=mem["confidence"],
+                expires_days=90,
+            )
         for fact in result.get("key_facts") or []:
             if not isinstance(fact, dict):
                 continue
@@ -117,7 +130,12 @@ class MemoryService:
             if category not in KEY_FACT_CATEGORIES:
                 category = "其他"
             await self._store.add_key_fact(
-                elder_id, category, str(fact.get("content", "")), source="dialog"
+                elder_id,
+                category,
+                str(fact.get("content", "")),
+                source="dialog",
+                confidence=_confidence(fact.get("confidence"), default=0.65),
+                expires_days=180,
             )
 
 
@@ -135,3 +153,27 @@ def _as_str_list(value) -> List[str]:
     if not isinstance(value, list):
         return []
     return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _memory_items(value) -> List[dict]:
+    """兼容旧模型返回 ["..."] 与新模型返回 [{"content", "confidence"}]。"""
+    if not isinstance(value, list):
+        return []
+    out = []
+    for item in value:
+        if isinstance(item, dict):
+            content = str(item.get("content", "")).strip()
+            confidence = _confidence(item.get("confidence"), default=0.7)
+        else:
+            content = str(item).strip()
+            confidence = 0.7
+        if content:
+            out.append({"content": content, "confidence": confidence})
+    return out
+
+
+def _confidence(value, default: float = 0.7) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return default

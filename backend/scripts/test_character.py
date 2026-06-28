@@ -19,6 +19,8 @@ from pathlib import Path
 
 from ..config import ArkConfig, VolcConfig
 from ..character import CharacterService, CharacterStore
+from ..character.chat_parser import parse_chat_record
+from ..character.persona import _render_prompt
 
 ELDER = "elder-char-test"
 OTHER = "elder-other"
@@ -96,6 +98,29 @@ async def _test_persona_template() -> None:
     _check("原始语料不落库", CORPUS not in snap["persona_prompt"])
 
 
+async def _test_chat_record_parser() -> None:
+    txt = parse_chat_record("chat.txt", "女儿: 爸，记得吃饭\n爸爸: 好的".encode("utf-8"))
+    _check("txt 聊天记录解析", "记得吃饭" in txt)
+    js = parse_chat_record(
+        "chat.json",
+        '[{"sender":"女儿","text":"爸你慢慢来"},{"sender":"爸爸","text":"好"}]'.encode("utf-8"),
+    )
+    _check("json 聊天记录解析", "女儿: 爸你慢慢来" in js)
+    csv_bytes = "sender,message\n女儿,爸你别着急\n爸爸,好\n".encode("utf-8")
+    csv_text = parse_chat_record("chat.csv", csv_bytes)
+    _check("csv 聊天记录解析", "女儿: 爸你别着急" in csv_text)
+    rendered = _render_prompt(
+        "女儿",
+        "女儿",
+        {
+            "identity": "女儿",
+            "sample_phrases": ["爸你别着急，记得按时吃饭"],
+            "phrase_patterns": ["安抚式短句；提醒式短句"],
+        },
+    )
+    _check("人格渲染不落 sample 原句", "爸你别着急" not in rendered and "句式模式" in rendered)
+
+
 async def _test_activation_and_injection() -> None:
     db = _fresh_db("active")
     store, svc = _service(db)
@@ -113,6 +138,12 @@ async def _test_activation_and_injection() -> None:
     svc._voice._mock_train_started["S_daughter1"] -= 999
     await svc.refresh_voice_status(ELDER, c1["id"])
     await svc.distill_persona(ELDER, c1["id"], CORPUS)
+    c1_ready = await svc.get(ELDER, c1["id"])
+    _check("声音+说话方式就绪后可同步", c1_ready["sync_status"] == "ready", c1_ready["sync_status"])
+    _check("同步给老人端成功", await svc.sync_to_elder(ELDER, c1["id"]))
+    companions = await svc.companions_for_elder(ELDER)
+    _check("老人端 companions 只暴露轻量角色", any(i["id"] == c1["id"] for i in companions["items"]))
+    _check("老人端新角色提示存在", companions["notice"]["character_id"] == c1["id"])
     ok = await svc.activate(ELDER, c1["id"])
     _check("激活成功", ok)
     _check("启用后注入 speaker", await svc.active_speaker(ELDER) == "S_daughter1")
@@ -140,6 +171,7 @@ async def main() -> None:
     await _test_crud_and_isolation()
     await _test_voice_mock()
     await _test_persona_template()
+    await _test_chat_record_parser()
     await _test_activation_and_injection()
     print("\n角色再生（声音克隆 + 人格蒸馏）自测全部通过 ✅")
 

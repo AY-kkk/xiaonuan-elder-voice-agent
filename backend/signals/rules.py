@@ -29,6 +29,11 @@ _TOPIC_RULES: List[Tuple[str, str, str, List[str]]] = [
 
 # 积极情绪词：用于判断当日整体心情基调
 _POSITIVE_WORDS = ["开心", "高兴", "舒服", "挺好", "不错", "好多了", "精神", "热闹"]
+_THIRD_PARTY_HINTS = [
+    "邻居", "别人", "人家", "老伴", "朋友", "新闻", "电视", "电视剧", "广播", "网上", "视频里",
+    "梦见", "以前", "去年", "上次", "听说",
+]
+_SELF_NOW_HINTS = ["我", "自己", "刚才", "现在", "今天", "这会儿", "我刚", "我在", "我有点"]
 
 
 def analyze_text(transcript: List[dict]) -> Dict:
@@ -42,13 +47,17 @@ def analyze_text(transcript: List[dict]) -> Dict:
     }
     """
     # 只看老人说的话，机器人回复不参与异常判定
-    elder_text = "。".join(
+    elder_utterances = [
         t.get("text", "") for t in transcript if t.get("role") == "user" and t.get("text")
-    )
+    ]
+    elder_text = "。".join(elder_utterances)
 
     mentions: List[dict] = []
     alerts: List[str] = []
     level = LEVEL_NORMAL
+    confidence = 0.78
+    review_required = False
+    review_reasons: List[str] = []
     for _topic, label, topic_level, words in _TOPIC_RULES:
         count = sum(elder_text.count(w) for w in words)
         if count <= 0:
@@ -56,10 +65,26 @@ def analyze_text(transcript: List[dict]) -> Dict:
         mentions.append({"topic": label, "count": count})
         if topic_level in (LEVEL_ATTENTION, LEVEL_URGENT):
             alerts.append(label)
-        level = _escalate(level, topic_level)
+        effective_level = topic_level
+        if topic_level == LEVEL_URGENT:
+            context = _urgent_context(elder_utterances, words)
+            confidence = min(confidence, context["confidence"])
+            if context["review_required"]:
+                review_required = True
+                review_reasons.append(context["reason"])
+                effective_level = LEVEL_ATTENTION
+        level = _escalate(level, effective_level)
 
     mood = _judge_mood(elder_text, level)
-    return {"level": level, "mood": mood, "mentions": mentions, "alerts": alerts}
+    return {
+        "level": level,
+        "mood": mood,
+        "mentions": mentions,
+        "alerts": alerts,
+        "confidence": round(confidence if mentions else 0.92, 2),
+        "review_required": review_required,
+        "review_reason": "；".join(dict.fromkeys(review_reasons)),
+    }
 
 
 def build_summary(result: Dict) -> str:
@@ -70,7 +95,9 @@ def build_summary(result: Dict) -> str:
     else:
         parts.append("未发现异常")
     if result["level"] == LEVEL_URGENT:
-        parts.append("⚠️ 检测到紧急信号，建议尽快联系老人")
+        parts.append("检测到紧急信号，建议尽快联系老人")
+    elif result.get("review_required"):
+        parts.append("语境可能非本人情况，建议轻量确认")
     return "；".join(parts)
 
 
@@ -91,3 +118,25 @@ def _judge_mood(text: str, level: str) -> str:
     if positive > 0:
         return "积极"
     return "平稳"
+
+
+def _urgent_context(utterances: List[str], urgent_words: List[str]) -> Dict:
+    hit_lines = [text for text in utterances if any(word in text for word in urgent_words)]
+    if not hit_lines:
+        return {"confidence": 0.78, "review_required": False, "reason": ""}
+    joined = "。".join(hit_lines)
+    has_third_party = any(hint in joined for hint in _THIRD_PARTY_HINTS)
+    has_self_now = any(hint in joined for hint in _SELF_NOW_HINTS)
+    if has_third_party and not has_self_now:
+        return {
+            "confidence": 0.52,
+            "review_required": True,
+            "reason": "紧急词可能来自第三方、媒体或回忆语境",
+        }
+    if has_third_party and has_self_now:
+        return {
+            "confidence": 0.68,
+            "review_required": True,
+            "reason": "紧急词语境复杂，建议确认是否为老人本人当前状况",
+        }
+    return {"confidence": 0.9 if has_self_now else 0.74, "review_required": False, "reason": ""}

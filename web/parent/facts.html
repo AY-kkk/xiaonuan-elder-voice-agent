@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>小暖 · 事项</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="../shared/mascot.css" />
+  <link rel="stylesheet" href="./parent.css" />
+</head>
+<body data-parent-page="facts">
+  <main class="screen parent-screen">
+    <header class="head">
+      <div>
+        <h1>事项</h1>
+        <p class="sub">重点事项和需要确认的记忆，都在这里处理</p>
+      </div>
+      <div class="mascot is-idle logo" aria-hidden="true">
+        <span class="body"></span><span class="hand"></span>
+        <span class="eye l"></span><span class="eye r"></span><span class="mouth"></span>
+      </div>
+    </header>
+
+    <section class="card" aria-label="重点事项">
+      <div class="card-head"><span class="card-title">重点事项</span></div>
+      <div id="facts"><div class="empty">加载中...</div></div>
+      <form class="inline-form" id="fact-form">
+        <select id="category" aria-label="事项分类"></select>
+        <input id="content" placeholder="如：每天早上提醒吃降压药" maxlength="200" />
+        <button class="btn primary" type="submit">添加</button>
+      </form>
+    </section>
+
+    <section class="card" aria-label="记忆审核">
+      <div class="card-head"><span class="card-title">记忆审核</span></div>
+      <p class="helper">这里只展示可转成照护动作的待确认事项，不展示长辈自己的生活点滴。</p>
+      <div id="memories"><div class="empty">加载中...</div></div>
+    </section>
+
+    <p class="privacy">家人只处理必要事项，原始聊天内容不会出现在这里</p>
+    <div id="parent-nav"></div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="./config.js"></script>
+  <script src="./shared.js"></script>
+  <script src="./nav.js"></script>
+  <script>
+    const {
+      ELDER_ID,
+      parentApi,
+      escapeHtml,
+      toast,
+      fetchJson,
+      statusText,
+    } = window.ParentShared;
+
+    async function loadCategories() {
+      const data = await fetchJson(parentApi("categories"));
+      document.getElementById("category").innerHTML =
+        (data.categories || []).map((item) => `<option>${escapeHtml(item)}</option>`).join("");
+    }
+
+    async function loadFacts() {
+      const box = document.getElementById("facts");
+      try {
+        const { items = [] } = await fetchJson(parentApi(`${ELDER_ID}/key_facts`));
+        if (!items.length) {
+          box.innerHTML = '<div class="empty">还没有重点事项，添加一条试试。</div>';
+          return;
+        }
+        box.innerHTML = items.map((fact) => `
+          <div class="fact">
+            <div class="fact-body">
+              <div class="fact-name">
+                <span class="tag">${escapeHtml(fact.category)}</span>${escapeHtml(fact.content)}
+                <span class="status-pill ${escapeHtml(fact.status)}">${statusText(fact.status)}</span>
+              </div>
+              <div class="fact-meta">${fact.source === "parent" ? "家人设置" : "对话整理"} · 置信度 ${Math.round((fact.confidence || 1) * 100)}%</div>
+            </div>
+            <div class="actions">
+              ${fact.status === "pending" ? `<button class="small-btn primary" data-approve="${fact.id}">确认</button>` : ""}
+              ${fact.status === "pending"
+                ? `<button class="danger-btn" data-archive-type="fact" data-archive-id="${fact.id}">归档</button>`
+                : `<button class="danger-btn" data-delete="${fact.id}">删除</button>`}
+            </div>
+          </div>`).join("");
+        box.querySelectorAll("button[data-delete]").forEach((button) => {
+          button.addEventListener("click", () => deleteFact(button.dataset.delete));
+        });
+        box.querySelectorAll("button[data-approve]").forEach((button) => {
+          button.addEventListener("click", () => approveFact(button.dataset.approve));
+        });
+        box.querySelectorAll("button[data-archive-id]").forEach((button) => {
+          button.addEventListener("click", () => archiveMemory(button.dataset.archiveType, button.dataset.archiveId));
+        });
+      } catch (error) {
+        box.innerHTML = '<div class="empty">重点事项加载失败。</div>';
+      }
+    }
+
+    async function addFact(event) {
+      event.preventDefault();
+      const category = document.getElementById("category").value;
+      const content = document.getElementById("content").value.trim();
+      if (!content) {
+        toast("请填写事项内容");
+        return;
+      }
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/key_facts`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ category, content }),
+        });
+        document.getElementById("content").value = "";
+        toast("已添加");
+        loadFacts();
+        loadMemories();
+      } catch (error) {
+        toast(error.message || "添加失败");
+      }
+    }
+
+    async function deleteFact(id) {
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/key_facts/${id}`), { method: "DELETE" });
+        toast("已删除");
+        loadFacts();
+        loadMemories();
+      } catch (error) {
+        toast(error.message || "删除失败");
+      }
+    }
+
+    async function approveFact(id) {
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/key_facts/${id}`), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "active", expires_days: 365 }),
+        });
+        toast("已确认");
+        loadFacts();
+        loadMemories();
+      } catch (error) {
+        toast(error.message || "确认失败");
+      }
+    }
+
+    async function loadMemories() {
+      const box = document.getElementById("memories");
+      try {
+        const data = await fetchJson(parentApi(`${ELDER_ID}/memories`));
+        const rows = (data.reviewable_key_facts || []).map((fact) => ({
+          type: "fact",
+          id: fact.id,
+          text: `[${fact.category}] ${fact.content}`,
+          meta: `待确认重点事项 · 置信度 ${Math.round((fact.confidence || 0.65) * 100)}%`,
+        }));
+        if (!rows.length) {
+          box.innerHTML = '<div class="empty">暂无需要审核的记忆。</div>';
+          return;
+        }
+        box.innerHTML = rows.map((item) => `
+          <div class="memory">
+            <div class="memory-body">
+              <div class="memory-text">${escapeHtml(item.text)}</div>
+              <div class="memory-meta">${escapeHtml(item.meta)}</div>
+            </div>
+            <div class="actions">
+              ${item.type === "fact" ? `<button class="small-btn primary" data-approve="${item.id}">确认</button>` : ""}
+              <button class="danger-btn" data-archive-type="${item.type}" data-archive-id="${item.id}">归档</button>
+            </div>
+          </div>`).join("");
+        box.querySelectorAll("button[data-approve]").forEach((button) => {
+          button.addEventListener("click", () => approveFact(button.dataset.approve));
+        });
+        box.querySelectorAll("button[data-archive-id]").forEach((button) => {
+          button.addEventListener("click", () => archiveMemory(button.dataset.archiveType, button.dataset.archiveId));
+        });
+      } catch (error) {
+        box.innerHTML = '<div class="empty">记忆审核加载失败。</div>';
+      }
+    }
+
+    async function archiveMemory(type, id) {
+      const path = `${ELDER_ID}/key_facts/${id}`;
+      try {
+        await fetchJson(parentApi(path), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "archived" }),
+        });
+        toast("已归档");
+        loadFacts();
+        loadMemories();
+      } catch (error) {
+        toast(error.message || "归档失败");
+      }
+    }
+
+    document.getElementById("fact-form").addEventListener("submit", addFact);
+    loadCategories().then(loadFacts).catch(() => {
+      document.getElementById("category").innerHTML = "<option>其他</option>";
+      loadFacts();
+    });
+    loadMemories();
+  </script>
+</body>
+</html>

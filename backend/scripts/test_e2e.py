@@ -110,6 +110,7 @@ async def main() -> None:
         # ---- L3：跨会话记忆引用 ----
         async with httpx.AsyncClient(base_url=base) as c:
             facts = (await c.get(f"/api/parent/{ELDER}/key_facts")).json()["items"]
+            memories = (await c.get(f"/api/elder/{ELDER}/memories")).json()["items"]
         fact_blob = " ".join(f"{f['category']}:{f['content']}" for f in facts)
         print(f"[INFO] 蒸馏出的重点事项：{fact_blob or '（空，方舟未配置则正常）'}")
 
@@ -124,10 +125,14 @@ async def main() -> None:
         store = MemoryStore(tmp_db)
         svc = MemoryService(store, ArkConfig())
         prompt, _ctx = await svc.build_context(ELDER)
-        if facts:  # 方舟已配置才有蒸馏记忆可断言
-            assert any(f["content"] in prompt for f in facts), \
-                f"第二轮注入上下文未包含历史记忆：{prompt}"
-            print("[PASS] L3 跨会话记忆：第二轮 StartSession 注入了第一轮蒸馏的事项")
+        active_facts = [f for f in facts if f.get("status") == "active"]
+        if active_facts or memories:  # 方舟已配置才有蒸馏记忆可断言
+            assert any(f["content"] in prompt for f in active_facts) or any(
+                m in prompt for m in memories
+            ), f"第二轮注入上下文未包含历史记忆：{prompt}"
+            print("[PASS] L3 跨会话记忆：第二轮 StartSession 注入了已确认事项或生活记忆")
+            if facts and not active_facts:
+                print("[PASS] L3 审核边界：对话识别重点事项默认待确认，未直接注入")
         else:
             print("[SKIP] L3 记忆断言：未配置 ARK_API_KEY，无蒸馏记忆（链路本身正常）")
 
