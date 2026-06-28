@@ -24,8 +24,15 @@ class SeeduplexEngine(VoiceEngine):
         self._client.on_event = self._forward_event
         await self._client.connect()
 
-    async def start_session(self, system_prompt: str = "", dialog_context: Optional[list] = None) -> None:
-        await self._client.start_session(system_prompt=system_prompt, dialog_context=dialog_context)
+    async def start_session(
+        self,
+        system_prompt: str = "",
+        dialog_context: Optional[list] = None,
+        speaker: Optional[str] = None,
+    ) -> None:
+        await self._client.start_session(
+            system_prompt=system_prompt, dialog_context=dialog_context, speaker=speaker
+        )
 
     async def send_audio(self, pcm: bytes) -> None:
         await self._client.send_audio(pcm)

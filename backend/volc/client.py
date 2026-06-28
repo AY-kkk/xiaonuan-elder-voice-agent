@@ -67,7 +67,12 @@ class VolcRealtimeClient:
         logger.info("火山连接已建立 connect_id=%s", self._connect_id)
 
     # ---- 会话生命周期 ----
-    async def start_session(self, system_prompt: str = "", dialog_context: list | None = None) -> None:
+    async def start_session(
+        self,
+        system_prompt: str = "",
+        dialog_context: list | None = None,
+        speaker: str | None = None,
+    ) -> None:
         self._session_id = str(uuid.uuid4()).replace("-", "")
         dialog: dict = {
             "extra": {"input_mod": "keep_alive"},  # 静音时保活，防音频流超时
@@ -80,10 +85,12 @@ class VolcRealtimeClient:
         if dialog_context:
             dialog["dialog_context"] = dialog_context
 
+        # 克隆音色：传入则覆盖默认音色（active 角色的 speaker_id），否则用配置默认音色。
+        active_speaker = (speaker or self._cfg.speaker)
         payload = {
             "asr": {"end_smooth_window_ms": 1000},  # 老年端静音判停 800-1200ms
             "tts": {
-                "speaker": self._cfg.speaker,
+                "speaker": active_speaker,
                 "audio_config": {"channel": 1, "format": "pcm_s16le", "sample_rate": 24000},
             },
             "dialog": dialog,

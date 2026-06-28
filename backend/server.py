@@ -20,8 +20,10 @@ from .engine.factory import create_engine
 from .memory import MemoryService, MemoryStore
 from .signals import SignalService
 from .usage import UsageStore
+from .character import CharacterService, CharacterStore
 from .api import parent as parent_api
 from .api import elder as elder_api
+from .api import character as character_api
 from .session.manager import ConversationSession
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -47,10 +49,15 @@ _memory_store = MemoryStore(cfg.db_path)
 _memory = MemoryService(_memory_store, cfg.ark, usage_store=_usage_store)
 # L4 子女端信号服务（规则引擎 + 隐私友好摘要）
 _signals = SignalService(cfg.db_path, cfg.ark, usage_store=_usage_store)
+# 角色再生服务（声音克隆 + 人格蒸馏）：让老人喜爱对象的声音与口吻陪伴老人
+_character_store = CharacterStore(cfg.db_path)
+_character = CharacterService(_character_store, cfg.volc, cfg.ark, usage_store=_usage_store)
 parent_api.bind(_memory_store, _signals, _usage_store, cfg.ark_price_per_mtoken)
 elder_api.bind(_memory_store)
+character_api.bind(_character)
 app.include_router(parent_api.router)
 app.include_router(elder_api.router)
+app.include_router(character_api.router)
 
 
 def _probe_volc_ready() -> bool:
@@ -66,6 +73,7 @@ async def _init_db() -> None:
     await _memory_store.ensure_schema()
     await _signals.ensure_schema()
     await _usage_store.ensure_schema()
+    await _character_store.ensure_schema()
 
 
 @app.on_event("startup")
@@ -89,6 +97,32 @@ def _on_session_end(elder_id: str):
     return _handler
 
 
+def _build_context_with_persona(elder_id: str):
+    """组合上下文提供器：基础记忆人设 + 当前启用角色的人格提示词。
+
+    人格段落拼在基础人设之后注入 system_role —— 这是「第二蒸馏」的注入点，
+    无需重训即让对话角色按目标人物的口吻/性格再生。无启用角色则只用基础人设。
+    """
+
+    async def _provider() -> tuple:
+        base_prompt, dialog_context = await _memory.build_context(elder_id)
+        persona = await _character.active_persona(elder_id)
+        if persona:
+            base_prompt = f"{base_prompt}\n\n{persona}"
+        return base_prompt, dialog_context
+
+    return _provider
+
+
+def _speaker_provider_for(elder_id: str):
+    """会话发声音色提供器：返回当前启用角色的克隆音色（未启用/未就绪则 None）。"""
+
+    async def _provider():
+        return await _character.active_speaker(elder_id)
+
+    return _provider
+
+
 @app.websocket("/ws/elder/{elder_id}")
 async def elder_ws(ws: WebSocket, elder_id: str) -> None:
     await ws.accept()
@@ -104,9 +138,10 @@ async def elder_ws(ws: WebSocket, elder_id: str) -> None:
         elder_id=elder_id,
         engine=create_engine(cfg),
         client_send=client_send,
-        context_provider=lambda: _memory.build_context(elder_id),
+        context_provider=_build_context_with_persona(elder_id),
         on_turn_text=None,
         on_session_end=_on_session_end(elder_id),
+        speaker_provider=_speaker_provider_for(elder_id),
     )
 
     try:
@@ -154,12 +189,11 @@ async def healthz() -> dict:
 
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
-if (_WEB_DIR / "elder").exists():
-    app.mount("/elder", StaticFiles(directory=str(_WEB_DIR / "elder"), html=True), name="elder")
-if (_WEB_DIR / "parent").exists():
-    app.mount("/parent", StaticFiles(directory=str(_WEB_DIR / "parent"), html=True), name="parent")
-if (_WEB_DIR / "admin").exists():
-    app.mount("/admin", StaticFiles(directory=str(_WEB_DIR / "admin"), html=True), name="admin")
+# 单一根挂载（html=True）：/ 提供入口选择页 index.html，/shared/* 提供共享样式，
+# /elder/ /parent/ /admin/ 自动按子目录托管。必须放在所有 API/WS 路由之后，
+# 这样显式路由优先，静态挂载只兜底未匹配路径。
+if _WEB_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(_WEB_DIR), html=True), name="web")
 
 
 def main() -> None:

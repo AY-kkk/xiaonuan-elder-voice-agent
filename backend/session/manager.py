@@ -21,6 +21,7 @@ from ..engine.base import EVENT_SESSION_ERROR, EVENT_USER_SPEECH_START, VoiceEng
 logger = logging.getLogger(__name__)
 
 ContextProvider = Callable[[], Awaitable[tuple]]
+SpeakerProvider = Callable[[], Awaitable[Optional[str]]]
 TurnTextHandler = Callable[[str, str], Awaitable[None]]
 SessionEndHandler = Callable[[list], Awaitable[None]]
 ClientSend = Callable[[Union[bytes, str]], Awaitable[None]]
@@ -35,10 +36,12 @@ class ConversationSession:
         context_provider: Optional[ContextProvider] = None,
         on_turn_text: Optional[TurnTextHandler] = None,
         on_session_end: Optional[SessionEndHandler] = None,
+        speaker_provider: Optional[SpeakerProvider] = None,
     ) -> None:
         self._elder_id = elder_id
         self._client_send = client_send
         self._context_provider = context_provider
+        self._speaker_provider = speaker_provider
         self._on_turn_text = on_turn_text
         self._on_session_end = on_session_end
         self._engine = engine
@@ -54,7 +57,12 @@ class ConversationSession:
         system_prompt, dialog_context = "", []
         if self._context_provider:
             system_prompt, dialog_context = await self._context_provider()
-        await self._engine.start_session(system_prompt=system_prompt, dialog_context=dialog_context)
+        speaker: Optional[str] = None
+        if self._speaker_provider:
+            speaker = await self._speaker_provider()
+        await self._engine.start_session(
+            system_prompt=system_prompt, dialog_context=dialog_context, speaker=speaker
+        )
         await self._send_status("connected")
 
     async def push_audio(self, pcm: bytes) -> None:

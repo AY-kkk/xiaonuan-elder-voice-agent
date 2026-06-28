@@ -33,7 +33,13 @@ class VoiceEngine(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def start_session(self, system_prompt: str = "", dialog_context: Optional[list] = None) -> None:
+    async def start_session(
+        self,
+        system_prompt: str = "",
+        dialog_context: Optional[list] = None,
+        speaker: Optional[str] = None,
+    ) -> None:
+        """speaker：本次会话发声音色（克隆 speaker_id）；None 则用引擎默认音色。"""
         ...
 
     @abc.abstractmethod

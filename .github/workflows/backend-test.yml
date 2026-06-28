@@ -31,6 +31,10 @@ jobs:
         run: python -m backend.scripts.test_session_isolation
       - name: 用量记账与成本（含隐私边界）
         run: python -m backend.scripts.test_usage
+      - name: 角色再生（声音克隆 + 人格蒸馏 · 含隐私边界）
+        run: python -m backend.scripts.test_character
+      - name: 上下文记忆闭环（注入 + 引用）
+        run: python -m backend.scripts.test_context_memory
       - name: 控制帧契约（阻断项 · R5）
         run: python -m backend.scripts.test_protocol_contract
       - name: 底层协议编解码自测

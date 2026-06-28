@@ -1,9 +1,13 @@
 // 适老端主逻辑：建连后端 WS、采集上行 PCM、播放下行 TTS、处理打断与字幕。
+// UI 为「半圆进度环」四态（待机/连接中/通话中/出错）+ 动态吉祥物两态联动。
 import { PcmPlayer } from "./player.js";
 
 const ELDER_ID = "elder-001"; // MVP 单家庭，固定 ID
-const statusEl = document.getElementById("status");
 const btn = document.getElementById("talk-btn");
+const statusEl = document.getElementById("status");
+const hintEl = document.getElementById("status-hint");
+const textEl = document.getElementById("talk-text");
+const timerEl = document.getElementById("talk-timer");
 const subtitleEl = document.getElementById("subtitle");
 
 let ws = null;
@@ -12,27 +16,69 @@ let micStream = null;
 let workletNode = null;
 let player = null;
 let live = false;
+let timerId = null, seconds = 0;
 
-// 本地 VAD 即时打断：Agent 出声时，连续多帧高能量即判定老人插话，立刻本地停播，
-// 不等服务端往返（达成 ≤300ms）。阈值偏保守，配合浏览器 AEC 降低自播误触发。
+// 本地 VAD 即时打断：Agent 出声时连续多帧高能量即判定老人插话，立刻本地停播。
 const VAD_RMS_THRESHOLD = 0.04;
-const VAD_TRIGGER_FRAMES = 4; // 连续 4 帧 ≈ 80ms 才算开口，过滤瞬时噪声
+const VAD_TRIGGER_FRAMES = 4;
 let vadVoiceFrames = 0;
-let bargedLocally = false; // 本轮已本地打断，避免重复 clear
-// 音频门闩（precise stop chain）：打断后关闸丢弃在途旧轮残尾，
-// 直到下一帧文本（新一轮回复开始）才重新开闸。开闸信号用可靠的文本帧而非乱序音频帧。
+let bargedLocally = false;
+// 音频门闩（precise stop chain）：打断后关闸丢弃在途旧轮残尾，下一帧文本才重新开闸。
 let acceptingAudio = true;
 
-function setStatus(text) { statusEl.textContent = text; }
+// 四态文案
+const COPY = {
+  idle:       { title: "轻触和家人说说话", hint: "我随时在，想聊就点下面的大圆圈", btn: "点击通话" },
+  connecting: { title: "正在为你接通…",     hint: "马上就好，请稍等一下",         btn: "连接中…" },
+  talking:    { title: "正在通话中",         hint: "想说什么就慢慢说，我在听",     btn: "" },
+  error:      { title: "没接通，再试一次",   hint: "网络好像不太稳，点圆圈重拨",   btn: "重新拨打" },
+};
+
+// 设定 UI 状态：通话按钮 data-state + 文案 + 吉祥物两态 + 计时器
+function setUiState(state) {
+  btn.dataset.state = state;
+  const c = COPY[state];
+  statusEl.textContent = c.title;
+  hintEl.textContent = c.hint;
+  textEl.textContent = c.btn;
+  // 吉祥物：仅通话中放大到中央，其余回到右上角 idle（CSS 控制过渡）
+  const mascot = document.querySelector(".mascot");
+  if (state === "talking") {
+    document.body.dataset.mascot = "talking";
+    mascot.classList.remove("is-idle"); mascot.classList.add("is-talking");
+  } else {
+    document.body.dataset.mascot = "idle";
+    mascot.classList.remove("is-talking"); mascot.classList.add("is-idle");
+  }
+  // 计时器
+  clearInterval(timerId);
+  if (state === "talking") {
+    seconds = 0; timerEl.textContent = "00:00";
+    timerId = setInterval(() => {
+      seconds++;
+      const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+      const s = String(seconds % 60).padStart(2, "0");
+      timerEl.textContent = `${m}:${s}`;
+    }, 1000);
+  }
+}
+
 function showText(role, text) {
   const who = role === "user" ? "我" : "TA";
   const cls = role === "user" ? "me" : "ta";
-  subtitleEl.innerHTML = `<span class="${cls}">${who}：</span>${text}`;
+  subtitleEl.innerHTML = `<span class="${cls}">${who}：</span>${escapeHtml(text)}`;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function apiBase() {
+  return (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
 }
 
 function wsUrl() {
-  // API_BASE 为空=同源；非空=分离部署，从配置地址推导 ws/wss 与 host。
-  const base = (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
+  const base = apiBase();
   if (base) {
     const u = new URL(base);
     const proto = u.protocol === "https:" ? "wss" : "ws";
@@ -42,81 +88,138 @@ function wsUrl() {
   return `${proto}://${location.host}/ws/elder/${ELDER_ID}`;
 }
 
+// 启动前健康预检：若后端引擎为 seeduplex 但语音凭证未就绪，提前给出友好提示，
+// 避免用户点了通话后卡在「正在接通…」（凭证缺失时建连必失败）。
+// 返回 true 表示可继续建连；false 表示已提示、不应继续。
+async function precheckReady() {
+  try {
+    const r = await fetch(`${apiBase()}/healthz`);
+    if (!r.ok) return true; // 健康检查不可用时不阻断，交由后续建连兜底
+    const h = await r.json();
+    if (h.engine === "seeduplex" && h.volc_ready === false) {
+      setUiState("error");
+      hintEl.textContent = "语音服务还没配置好，请联系家人帮忙设置";
+      return false;
+    }
+  } catch (_) {
+    // 预检失败不阻断，让真正的建连流程去暴露问题
+  }
+  return true;
+}
+
 async function start() {
-  setStatus("正在连接…");
+  setUiState("connecting");
   btn.disabled = true;
 
-  player = new PcmPlayer(24000);
-  await player.resume();
+  // 凭证预检：缺语音凭证时直接友好提示，不进入卡死的连接流程
+  if (!(await precheckReady())) {
+    btn.disabled = false;
+    return;
+  }
 
-  // 麦克风采集 + AEC（回声消除，防止 TTS 自播被回采误触发打断）
-  micStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+  try {
+    player = new PcmPlayer(24000);
+    await player.resume();
+
+    // 麦克风采集 + AEC（回声消除，防止 TTS 自播被回采误触发打断）
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+    });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    await audioCtx.audioWorklet.addModule("./capture-worklet.js");
+    const srcNode = audioCtx.createMediaStreamSource(micStream);
+    workletNode = new AudioWorkletNode(audioCtx, "capture-processor");
+    srcNode.connect(workletNode);
+    workletNode.port.onmessage = (e) => {
+      const { pcm, rms } = e.data;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(pcm);
+      localVad(rms);
+    };
+
+    await openSocket();
+    live = true;
+    btn.disabled = false;
+  } catch (err) {
+    // 任一环节失败（麦克风被拒/无设备/Worklet 加载失败/建连失败/超时）：
+    // 彻底清理已建资源，回到可重试态，给适老化友好提示。
+    failStart(err);
+  }
+}
+
+// 建连 WebSocket，以 Promise 等待 open/error/超时，便于 start() 统一捕获失败。
+function openSocket() {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    ws = new WebSocket(wsUrl());
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () => { settled = true; setUiState("talking"); resolve(); };
+    ws.onmessage = onMessage;
+    ws.onclose = () => {
+      if (!settled) { settled = true; reject(new Error("connect_closed")); return; }
+      if (live) setUiState("idle");
+      cleanupAfterStop();
+    };
+    ws.onerror = () => {
+      if (!settled) { settled = true; reject(new Error("connect_error")); }
+      else setUiState("error");
+    };
+    // 建连超时兜底：8s 未 open 视为失败，避免无限期卡在「接通中」
+    setTimeout(() => { if (!settled) { settled = true; reject(new Error("connect_timeout")); } }, 8000);
   });
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  await audioCtx.audioWorklet.addModule("./capture-worklet.js");
-  const srcNode = audioCtx.createMediaStreamSource(micStream);
-  workletNode = new AudioWorkletNode(audioCtx, "capture-processor");
-  srcNode.connect(workletNode);
-  workletNode.port.onmessage = (e) => {
-    const { pcm, rms } = e.data;
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(pcm);
-    localVad(rms);
-  };
+}
 
-  ws = new WebSocket(wsUrl());
-  ws.binaryType = "arraybuffer";
-  ws.onopen = () => setStatus("接通啦，您说话吧");
-  ws.onmessage = onMessage;
-  ws.onclose = () => { setStatus("已挂断"); cleanupAfterStop(); };
-  ws.onerror = () => setStatus("连接出错了，请再试一次");
-
-  live = true;
+// 启动失败统一收口：清理资源 + 适老化友好提示 + 恢复可重试。
+function failStart(err) {
+  const msg = String((err && err.name) || (err && err.message) || err);
+  cleanupAfterStop();
+  if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+  setUiState("error");
+  if (msg.includes("NotAllowed") || msg.includes("Permission")) {
+    hintEl.textContent = "需要您允许使用麦克风，才能说话哦";
+  } else if (msg.includes("NotFound") || msg.includes("Devices")) {
+    hintEl.textContent = "没有找到麦克风，请检查设备后再试";
+  } else if (msg.includes("connect")) {
+    hintEl.textContent = "没连上，请检查网络后点圆圈重试";
+  } else {
+    hintEl.textContent = "出了点小问题，请点圆圈再试一次";
+  }
   btn.disabled = false;
-  btn.classList.add("live");
-  btn.innerHTML = "挂断";
 }
 
 function onMessage(e) {
   if (e.data instanceof ArrayBuffer) {
-    if (acceptingAudio) player.enqueue(e.data); // 关闸期间丢弃旧轮残尾
+    if (acceptingAudio && player) player.enqueue(e.data); // player 已清理则丢弃
     return;
   }
   let msg;
   try { msg = JSON.parse(e.data); } catch (_) { return; }
   if (msg.type === "barge_in") {
-    interrupt(); // 服务端打断信号兜底：本地未触发时由此停播
+    interrupt();
   } else if (msg.type === "text") {
-    // 文本推进 = 新一轮回复开始：重新开闸并允许再次本地打断。
     acceptingAudio = true;
     bargedLocally = false;
+    if (btn.dataset.state !== "talking") setUiState("talking");
     showText(msg.role, msg.text);
   } else if (msg.type === "status") {
-    if (msg.status === "connected") setStatus("接通啦，您说话吧");
-    else if (msg.status === "error") setStatus("出了点小问题，请再试一次");
-    else if (msg.status === "ended") setStatus("已挂断");
+    if (msg.status === "connected") setUiState("talking");
+    else if (msg.status === "error") setUiState("error");
+    else if (msg.status === "ended") { setUiState("idle"); }
   }
 }
 
-// 统一打断：停播 + 关音频门闩丢弃旧轮在途残尾。本地 VAD 与服务端 barge_in 共用。
+// 统一打断：停播 + 关音频门闩丢弃旧轮在途残尾。
 function interrupt() {
-  player.clear();
+  if (player) player.clear();
   bargedLocally = true;
   acceptingAudio = false;
   vadVoiceFrames = 0;
 }
 
-// 本地 VAD：仅在 Agent 出声时生效；连续高能量帧达阈值即立刻停播。
 function localVad(rms) {
-  if (!player || !player.isPlaying || bargedLocally) {
-    vadVoiceFrames = 0;
-    return;
-  }
+  if (!player || !player.isPlaying || bargedLocally) { vadVoiceFrames = 0; return; }
   if (rms >= VAD_RMS_THRESHOLD) {
     vadVoiceFrames += 1;
-    if (vadVoiceFrames >= VAD_TRIGGER_FRAMES) {
-      interrupt();
-    }
+    if (vadVoiceFrames >= VAD_TRIGGER_FRAMES) interrupt();
   } else {
     vadVoiceFrames = 0;
   }
@@ -127,20 +230,20 @@ function stop() {
     ws.send(JSON.stringify({ type: "hangup" }));
     ws.close();
   }
+  setUiState("idle");
   cleanupAfterStop();
 }
 
 function cleanupAfterStop() {
   live = false;
-  btn.classList.remove("live");
-  btn.innerHTML = "开始<br/>说话";
   if (workletNode) { workletNode.disconnect(); workletNode = null; }
   if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
   if (audioCtx) { audioCtx.close(); audioCtx = null; }
-  if (player) { player.clear(); }
+  if (player) { player.clear(); player = null; }
 }
 
+// 通话按钮：通话中→挂断；空闲→发起通话（失败已由 start() 内部收口）。
 btn.addEventListener("click", () => {
   if (live) stop();
-  else start().catch((err) => { setStatus("无法使用麦克风：" + err.message); btn.disabled = false; });
+  else start();
 });

@@ -60,7 +60,15 @@ class MemoryService:
         return ArkTextClient(self._ark_cfg, usage_sink=_sink)
 
     async def build_context(self, elder_id: str) -> Tuple[str, list]:
-        """组装注入 StartSession 的 system_prompt 与 dialog_context。"""
+        """组装注入 StartSession 的 system_prompt 与 dialog_context。
+
+        记忆分三层，各司其职（隐私 A：原始对话从不落库）：
+          - 会话内连贯：交由语音引擎原生上下文（同一 session 内引擎自然记得），
+            故 dialog_context 返回空数组，不重复回填。
+          - 跨会话记忆：把已蒸馏的「重点事项 + 生活记忆」拼进 system_prompt，
+            让 AI 跨通话也「记得之前聊过的事」（引擎据此主动引用）。
+          - 隐私边界：这里只读蒸馏后的结构化记忆，绝不读取/拼接任何原始对话句子。
+        """
         try:
             key_facts = await self._store.list_key_facts(elder_id)
             life = await self._store.recent_life_memories(elder_id, limit=15)
