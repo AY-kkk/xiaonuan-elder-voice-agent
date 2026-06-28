@@ -1,0 +1,99 @@
+/* ============================================================
+   小暖 · 全局设计系统（唯一真源）
+   字体与颜色按产品规格定义；对比度已校准至 WCAG AA+。
+   ============================================================ */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap");
+
+:root {
+  /* 背景 */
+  --color-bg:       #E9E3DA;
+  --color-bg-alt:   #EDE7DE;
+  --color-card:     #FAF7F2;
+  /* 文字（已校准对比度） */
+  --color-ink:      #1C1A17;  /* 标题/正文 */
+  --color-sub:      #5A5249;  /* 次要文字，≥6:1 */
+  --color-hairline: #8A8175;  /* 仅分割线/图标，不用于文字 */
+  /* 强调与语义 */
+  --color-accent:   #E8814A;  /* 赤陶橙，点睛≤10%面积 */
+  --color-success:  #4E8D6E;
+  --color-warning:  #E8814A;
+  --color-danger:   #C2462D;
+  /* 字体 */
+  --font-zh: "Noto Sans SC","PingFang SC",-apple-system,system-ui,sans-serif;
+  --font-num: "Inter","Noto Sans SC",sans-serif;
+  /* 字阶 */
+  --fs-display: 40px; --fs-h1: 32px; --fs-h2: 28px;
+  --fs-body: 22px;    --fs-label: 18px; --fs-caption: 16px;
+  /* 形状 */
+  --radius-card: 28px;
+  --shadow-soft: 0 8px 24px rgba(28,26,23,.06);
+
+  /* ---------- 布局辅助（规格未定义，布局/动效必需，统一管理） ---------- */
+  --color-accent-soft: #F2C7A8;  /* 强调色柔化：仅用于进度弧渐变末端，不作大面积填充 */
+  --color-tint:        #EFE7DB;  /* 卡片内浅色分隔填充（由 hairline 提亮，非文字色） */
+  --radius-pill:       999px;
+  --shadow-btn:        0 12px 30px rgba(28,26,23,.12);
+  --fw-heavy: 800; --fw-mid: 600; --fw-light: 400;
+  --sp-xs: 8px; --sp-sm: 14px; --sp-md: 20px; --sp-lg: 30px; --sp-xl: 44px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { min-height: 100%; }
+body {
+  font-family: var(--font-zh);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+/* 数字（成本/计时器/指标）用等宽数字字体，排版更稳 */
+.num, .tabular { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* 移动端 390px 居中容器 */
+.screen {
+  position: relative;
+  width: 390px;
+  max-width: 100%;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-xl) var(--sp-md) 0;
+  overflow: hidden;
+}
+
+/* 通用胶囊导航（炭黑底，线性图标） */
+.tabbar {
+  position: sticky;
+  bottom: var(--sp-md);
+  width: 100%;
+  background: var(--color-ink);
+  border-radius: var(--radius-pill);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: var(--sp-sm) var(--sp-md);
+  margin: var(--sp-md) auto var(--sp-lg);
+  box-shadow: var(--shadow-btn);
+}
+.tab {
+  flex: 1; min-width: 60px; min-height: 60px;   /* 触控热区≥60px */
+  background: none; border: none; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  color: var(--color-bg-alt); opacity: .7; text-decoration: none;
+  transition: opacity .2s;
+}
+.tab svg { width: 28px; height: 28px; stroke-width: 1.8; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+.tab span { font-size: var(--fs-caption); }
+.tab.active { opacity: 1; color: var(--color-card); }
+.tab.active svg { color: var(--color-accent); }
+
+/* 轻提示 toast */
+.toast {
+  position: fixed; left: 50%; bottom: 110px; transform: translateX(-50%);
+  background: rgba(28,26,23,.92); color: var(--color-card);
+  padding: 12px 22px; border-radius: var(--radius-pill);
+  font-size: var(--fs-label); opacity: 0; transition: opacity .3s;
+  pointer-events: none; max-width: 90%; z-index: 50;
+}
+.toast.show { opacity: 1; }

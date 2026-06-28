@@ -2,95 +2,200 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>家人关怀 · 子女端</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>小暖 · 今日信号</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="../shared/mascot.css" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: #f5f6f8; color: #1f2329; line-height: 1.5;
-      max-width: 640px; margin: 0 auto; padding: 16px;
-    }
-    h1 { font-size: 20px; margin: 8px 0 16px; }
-    h2 { font-size: 16px; margin: 24px 0 12px; color: #4e5969; }
-    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 12px; }
-    .signal { border-left: 4px solid #c9cdd4; }
-    .signal.attention { border-left-color: #ff9a2e; }
-    .signal.urgent { border-left-color: #f53f3f; background: #fff2f0; }
-    .signal .meta { font-size: 12px; color: #86909c; margin-bottom: 4px; }
-    .signal .summary { font-size: 15px; }
-    .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; margin-left: 6px; }
-    .badge.normal { background: #e8f3ff; color: #165dff; }
-    .badge.attention { background: #fff7e8; color: #ff7d00; }
-    .badge.urgent { background: #ffece8; color: #f53f3f; }
-    .fact { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f1f3; }
-    .fact:last-child { border-bottom: none; }
-    .fact .tag { font-size: 12px; background: #f2f3f5; color: #4e5969; padding: 1px 8px; border-radius: 8px; margin-right: 8px; }
-    .fact .src { font-size: 11px; color: #c9cdd4; margin-left: 6px; }
-    .fact button { border: none; background: none; color: #f53f3f; cursor: pointer; font-size: 13px; }
-    form { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-    select, input { padding: 8px; border: 1px solid #e5e6eb; border-radius: 8px; font-size: 14px; }
-    input { flex: 1; min-width: 140px; }
-    button.add { background: #165dff; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; }
-    .empty { color: #c9cdd4; font-size: 14px; padding: 8px 0; }
-    .privacy { font-size: 12px; color: #86909c; margin-top: 16px; text-align: center; }
-    .cost { display: flex; gap: 16px; }
-    .cost .item { flex: 1; text-align: center; }
-    .cost .num { font-size: 26px; font-weight: 700; color: #165dff; }
-    .cost .num.money { color: #00b42a; }
-    .cost .lbl { font-size: 12px; color: #86909c; margin-top: 2px; }
-    .cost-note { font-size: 11px; color: #c9cdd4; margin-top: 10px; text-align: center; }
+    /* 顶部 */
+    .head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: var(--sp-md); }
+    .head h1 { font-size: var(--fs-h1); font-weight: var(--fw-heavy); letter-spacing: -.5px; }
+    .head .date { margin-top: var(--sp-xs); font-size: var(--fs-label); color: var(--color-sub); }
+    .head .logo { --m-size: 52px; }
+    .hero { font-size: var(--fs-h1); font-weight: var(--fw-heavy); line-height: 1.25; margin-bottom: var(--sp-lg); }
+
+    /* 卡片 */
+    .card { background: var(--color-card); border-radius: var(--radius-card); box-shadow: var(--shadow-soft); padding: var(--sp-md) var(--sp-md) var(--sp-lg); margin-bottom: var(--sp-md); }
+    .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-md); }
+    .card-title { font-size: var(--fs-h2); font-weight: var(--fw-heavy); }
+    .card-more { font-size: var(--fs-label); color: var(--color-sub); display: inline-flex; align-items: center; gap: 3px; background: none; border: none; cursor: pointer; }
+    .card-more svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    .state-badge { display: inline-flex; align-items: center; gap: 6px; color: var(--color-accent); font-size: var(--fs-h2); font-weight: var(--fw-heavy); }
+    .state-badge svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .state-line { font-size: var(--fs-body); color: var(--color-sub); }
+
+    /* 成本两栏 */
+    .cost { display: flex; gap: var(--sp-md); }
+    .cost .item { flex: 1; }
+    .cost .num { font-size: var(--fs-display); font-weight: var(--fw-heavy); color: var(--color-accent); font-family: var(--font-num); }
+    .cost .num.calls { color: var(--color-ink); }
+    .cost .lbl { font-size: var(--fs-label); color: var(--color-sub); margin-top: var(--sp-xs); }
+    .cost-note { font-size: var(--fs-caption); color: var(--color-sub); margin-top: var(--sp-md); }
+
+    /* 信号列表项 */
+    .signal { display: flex; align-items: flex-start; gap: var(--sp-sm); padding: var(--sp-sm) 0; border-top: 1px solid var(--color-tint); }
+    .signal:first-of-type { border-top: none; }
+    .signal-ico { width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--color-tint); display: grid; place-items: center; color: var(--color-hairline); }
+    .signal-ico svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .signal-body { flex: 1; }
+    .signal-sum { font-size: var(--fs-body); line-height: 1.45; }
+    .signal-meta { font-size: var(--fs-caption); color: var(--color-sub); margin-top: 4px; }
+    .signal.attention .signal-ico { background: rgba(232,129,74,.14); color: var(--color-accent); }
+    .signal.urgent .signal-ico { background: rgba(194,70,45,.16); color: var(--color-danger); }
+    .lvl-badge { display: inline-block; font-size: var(--fs-caption); padding: 2px 10px; border-radius: var(--radius-pill); margin-left: 6px; }
+    .lvl-badge.normal { background: var(--color-tint); color: var(--color-sub); }
+    .lvl-badge.attention { background: rgba(232,129,74,.16); color: var(--color-accent); }
+    .lvl-badge.urgent { background: rgba(194,70,45,.16); color: var(--color-danger); }
+
+    /* 重点事项 */
+    .fact { display: flex; align-items: center; gap: var(--sp-sm); padding: var(--sp-sm) 0; border-top: 1px solid var(--color-tint); }
+    .fact:first-of-type { border-top: none; }
+    .fact-body { flex: 1; }
+    .fact-name { font-size: var(--fs-body); font-weight: var(--fw-mid); }
+    .fact-meta { font-size: var(--fs-caption); color: var(--color-sub); margin-top: 2px; }
+    .fact .tag { font-size: var(--fs-caption); background: var(--color-tint); color: var(--color-sub); padding: 2px 10px; border-radius: var(--radius-pill); margin-right: 6px; }
+    .fact-del { border: none; background: none; color: var(--color-danger); cursor: pointer; font-size: var(--fs-label); padding: 8px; min-width: 44px; min-height: 44px; }
+    .add-form { display: flex; gap: var(--sp-xs); margin-top: var(--sp-md); flex-wrap: wrap; }
+    .add-form select, .add-form input { font-size: var(--fs-label); padding: 12px; border: 2px solid var(--color-tint); border-radius: 14px; background: var(--color-bg-alt); color: var(--color-ink); }
+    .add-form input { flex: 1; min-width: 120px; }
+    .add-form .add-btn { background: var(--color-ink); color: var(--color-card); border: none; border-radius: 14px; padding: 12px 18px; font-size: var(--fs-label); font-weight: var(--fw-mid); cursor: pointer; }
+
+    .privacy { text-align: center; font-size: var(--fs-caption); color: var(--color-sub); margin: var(--sp-xs) 0 var(--sp-md); line-height: 1.6; }
+    .empty { color: var(--color-sub); font-size: var(--fs-label); padding: var(--sp-sm) 0; }
   </style>
 </head>
 <body>
-  <h1>家人关怀 · 子女端</h1>
+  <main class="screen">
+    <!-- 顶部 -->
+    <header class="head">
+      <div>
+        <h1>今日信号</h1>
+        <p class="date" id="date">加载中…</p>
+      </div>
+      <div class="mascot is-idle logo" aria-hidden="true">
+        <span class="body"></span><span class="hand"></span>
+        <span class="eye l"></span><span class="eye r"></span><span class="mouth"></span>
+      </div>
+    </header>
+    <h2 class="hero" id="hero">正在了解长辈今天的状态…</h2>
 
-  <h2>本月关怀成本</h2>
-  <div class="card">
-    <div class="cost" id="cost"><div class="empty">加载中…</div></div>
-    <div class="cost-note" id="cost-note"></div>
-  </div>
+    <!-- 整体状态卡片（取最新信号结论） -->
+    <section class="card" aria-label="整体状态">
+      <div class="card-head">
+        <span class="card-title">整体状态</span>
+        <span class="state-badge" id="state-badge">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+          <span id="state-text">良好</span>
+        </span>
+      </div>
+      <p class="state-line" id="state-line">一切如常，继续保持</p>
+    </section>
 
-  <h2>每日信号摘要</h2>
-  <div id="signals"><div class="empty">加载中…</div></div>
+    <!-- 本月关怀成本卡片 -->
+    <section class="card" id="cost-card" aria-label="本月关怀成本">
+      <div class="card-head"><span class="card-title">本月关怀成本</span></div>
+      <div class="cost" id="cost"><div class="empty">加载中…</div></div>
+      <div class="cost-note" id="cost-note"></div>
+    </section>
 
-  <h2>重点事项（会主动关照老人）</h2>
-  <div class="card">
-    <div id="facts"><div class="empty">加载中…</div></div>
-    <form id="fact-form">
-      <select id="cat"></select>
-      <input id="content" placeholder="如：每天早上提醒吃降压药" maxlength="200" />
-      <button class="add" type="submit">添加</button>
-    </form>
-  </div>
+    <!-- 每日信号卡片 -->
+    <section class="card" id="signals-card" aria-label="每日信号">
+      <div class="card-head"><span class="card-title">每日信号</span></div>
+      <div id="signals"><div class="empty">加载中…</div></div>
+    </section>
 
-  <p class="privacy">隐私保护：本页只展示结论性信号与您设置的事项，绝不展示老人的原始对话内容。</p>
+    <!-- 重点事项卡片（可增删，会主动关照老人） -->
+    <section class="card" id="facts-card" aria-label="重点事项">
+      <div class="card-head"><span class="card-title">重点事项</span></div>
+      <div id="facts"><div class="empty">加载中…</div></div>
+      <form class="add-form" id="fact-form">
+        <select id="cat" aria-label="事项分类"></select>
+        <input id="content" placeholder="如：每天早上提醒吃降压药" maxlength="200" />
+        <button class="add-btn" type="submit">添加</button>
+      </form>
+    </section>
+
+    <p class="privacy">仅展示状态信号与你设置的事项，绝不展示原始对话内容 · 守护隐私</p>
+
+    <!-- 底部胶囊导航：均为真实功能 -->
+    <nav class="tabbar" aria-label="主导航">
+      <button class="tab active" data-scroll="signals-card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+        <span>信号</span>
+      </button>
+      <button class="tab" data-scroll="facts-card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>事项</span>
+      </button>
+      <button class="tab" data-scroll="cost-card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <span>成本</span>
+      </button>
+      <a class="tab" href="../index.html?pick=1">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>
+        <span>切换身份</span>
+      </a>
+    </nav>
+  </main>
+
+  <div class="toast" id="toast"></div>
 
   <script src="./config.js"></script>
   <script>
     const ELDER_ID = "elder-001";
-    // API_BASE 为空=同源；非空=分离部署时的后端地址（不带末尾斜杠）。
     const API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
     const api = (p) => `${API_BASE}/api/parent/${p}`;
 
-    async function loadCategories() {
-      const r = await fetch(api("categories")).then((x) => x.json());
-      document.getElementById("cat").innerHTML = r.categories.map((c) => `<option>${c}</option>`).join("");
-    }
+    function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+    function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2000); }
+    function fmtTime(ts) { return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false }); }
+    function levelText(l) { return { normal: "良好", attention: "需关注", urgent: "紧急" }[l] || l; }
 
+    // 顶部日期
+    document.getElementById("date").textContent =
+      "长辈的状态 · " + new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" });
+
+    // 信号列表 + 据最新信号刷新「整体状态」与一句话总览
     async function loadSignals() {
       const box = document.getElementById("signals");
       try {
         const { items } = await fetch(api(`${ELDER_ID}/signals`)).then((x) => x.json());
-        if (!items.length) { box.innerHTML = '<div class="card empty">暂无信号，老人开始对话后会自动生成。</div>'; return; }
+        if (!items.length) {
+          box.innerHTML = '<div class="empty">暂无信号，长辈开始对话后会自动生成。</div>';
+          document.getElementById("hero").textContent = "今天还没有新消息";
+          return;
+        }
+        const top = items[0];
+        document.getElementById("hero").textContent = heroText(top);
+        document.getElementById("state-text").textContent = levelText(top.level);
+        document.getElementById("state-line").textContent = top.summary || "一切如常";
         box.innerHTML = items.map((s) => `
-          <div class="card signal ${s.level}">
-            <div class="meta">${fmtTime(s.created_at)}<span class="badge ${s.level}">${levelText(s.level)}</span></div>
-            <div class="summary">${escapeHtml(s.summary)}</div>
+          <div class="signal ${esc(s.level)}">
+            <span class="signal-ico">${ICON[s.level] || ICON.normal}</span>
+            <div class="signal-body">
+              <div class="signal-sum">${esc(s.summary)}<span class="lvl-badge ${esc(s.level)}">${levelText(s.level)}</span></div>
+              <div class="signal-meta">${fmtTime(s.created_at)}</div>
+            </div>
           </div>`).join("");
-      } catch (e) { box.innerHTML = '<div class="card empty">加载失败</div>'; }
+      } catch (e) { box.innerHTML = '<div class="empty">加载失败</div>'; }
     }
+    function heroText(s) {
+      if (s.level === "urgent") return "需要你多留意长辈";
+      if (s.level === "attention") return "长辈今天有点小状况";
+      return "长辈今天状态不错";
+    }
+    const ICON = {
+      normal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>',
+      attention: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+      urgent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    };
 
+    // 重点事项 CRUD
+    async function loadCategories() {
+      const r = await fetch(api("categories")).then((x) => x.json());
+      document.getElementById("cat").innerHTML = r.categories.map((c) => `<option>${esc(c)}</option>`).join("");
+    }
     async function loadFacts() {
       const box = document.getElementById("facts");
       try {
@@ -98,50 +203,52 @@
         if (!items.length) { box.innerHTML = '<div class="empty">还没有重点事项，添加一条试试。</div>'; return; }
         box.innerHTML = items.map((f) => `
           <div class="fact">
-            <div><span class="tag">${escapeHtml(f.category)}</span>${escapeHtml(f.content)}
-              <span class="src">${f.source === "parent" ? "我设置的" : "对话识别"}</span></div>
-            <button data-id="${f.id}">删除</button>
+            <div class="fact-body">
+              <div class="fact-name"><span class="tag">${esc(f.category)}</span>${esc(f.content)}</div>
+              <div class="fact-meta">${f.source === "parent" ? "我设置的" : "对话识别"}</div>
+            </div>
+            <button class="fact-del" data-id="${f.id}" aria-label="删除">删除</button>
           </div>`).join("");
-        box.querySelectorAll("button[data-id]").forEach((b) =>
-          b.addEventListener("click", () => deleteFact(b.dataset.id)));
+        box.querySelectorAll("button[data-id]").forEach((b) => b.addEventListener("click", () => delFact(b.dataset.id)));
       } catch (e) { box.innerHTML = '<div class="empty">加载失败</div>'; }
     }
-
     async function addFact(e) {
       e.preventDefault();
       const category = document.getElementById("cat").value;
       const content = document.getElementById("content").value.trim();
-      if (!content) return;
-      await fetch(api(`${ELDER_ID}/key_facts`), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category, content }),
-      });
-      document.getElementById("content").value = "";
-      loadFacts();
+      if (!content) { toast("请填写事项内容"); return; }
+      try {
+        await fetch(api(`${ELDER_ID}/key_facts`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, content }) });
+        document.getElementById("content").value = "";
+        toast("已添加"); loadFacts();
+      } catch (e) { toast("添加失败"); }
+    }
+    async function delFact(id) {
+      try { await fetch(api(`${ELDER_ID}/key_facts/${id}`), { method: "DELETE" }); toast("已删除"); loadFacts(); }
+      catch (e) { toast("删除失败"); }
     }
 
-    async function deleteFact(id) {
-      await fetch(api(`${ELDER_ID}/key_facts/${id}`), { method: "DELETE" });
-      loadFacts();
-    }
-
-    function levelText(l) { return { normal: "正常", attention: "需关注", urgent: "紧急" }[l] || l; }
-    function fmtTime(ts) { return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false }); }
-    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-
+    // 成本看板
     async function loadCost() {
       const box = document.getElementById("cost");
       const note = document.getElementById("cost-note");
       try {
         const u = await fetch(api(`${ELDER_ID}/usage`)).then((x) => x.json());
         box.innerHTML = `
-          <div class="item"><div class="num money">¥${u.cost_yuan.toFixed(2)}</div><div class="lbl">${u.month} 预估花费</div></div>
-          <div class="item"><div class="num">${u.calls}</div><div class="lbl">本月关怀分析次数</div></div>`;
+          <div class="item"><div class="num">¥${u.cost_yuan.toFixed(2)}</div><div class="lbl">${u.month} 预估花费</div></div>
+          <div class="item"><div class="num calls">${u.calls}</div><div class="lbl">本月关怀分析次数</div></div>`;
         note.textContent = `按 ¥${u.price_per_mtoken}/百万字估算，实际以服务商账单为准`;
-      } catch (e) {
-        box.innerHTML = '<div class="empty">成本数据加载失败</div>';
-      }
+      } catch (e) { box.innerHTML = '<div class="empty">成本数据加载失败</div>'; }
     }
+
+    // 底部导航：滚动定位到对应卡片 + 高亮
+    document.querySelectorAll(".tab[data-scroll]").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById(tab.dataset.scroll).scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
 
     document.getElementById("fact-form").addEventListener("submit", addFact);
     loadCategories().then(loadFacts);

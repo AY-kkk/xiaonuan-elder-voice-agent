@@ -1,0 +1,120 @@
+/* ============================================================
+   小暖 · 纯 CSS 动态吉祥物（赤陶橙黏土蛋形角色）
+   零图片依赖，全部用 CSS 绘制 + 动画。两态：
+     .mascot.is-idle     —— 安静呼吸微动 + 偶尔眨眼
+     .mascot.is-talking  —— 张嘴说话 + 柔和赤陶橙声波涟漪
+   尺寸由外层用 --m-size 控制（默认 160px），可在任意页面复用。
+   ============================================================ */
+.mascot {
+  --m-size: 160px;
+  position: relative;
+  width: var(--m-size);
+  height: var(--m-size);
+  display: inline-block;
+  flex: none;
+}
+
+/* 身体：上窄下宽的蛋形，黏土质感（径向高光 + 底部柔影） */
+.mascot .body {
+  position: absolute;
+  left: 8%; top: 6%;
+  width: 84%; height: 88%;
+  border-radius: 50% 50% 48% 48% / 56% 56% 44% 44%;
+  background:
+    radial-gradient(60% 50% at 38% 32%, #F6B689 0%, transparent 60%),
+    radial-gradient(120% 120% at 50% 18%, #EE9A66 0%, #E8814A 42%, #D86E37 100%);
+  box-shadow:
+    inset -10px -14px 26px rgba(150,70,30,.30),
+    inset 8px 10px 20px rgba(255,210,170,.35),
+    0 14px 26px rgba(28,26,23,.16);
+  transform-origin: 50% 92%;
+}
+.mascot.is-idle  .body { animation: m-breathe 3.4s ease-in-out infinite; }
+.mascot.is-talking .body { animation: m-bob 1.2s ease-in-out infinite; }
+
+@keyframes m-breathe {
+  0%,100% { transform: scale(1) translateY(0); }
+  50%     { transform: scale(1.03,.985) translateY(2px); }
+}
+@keyframes m-bob {
+  0%,100% { transform: translateY(0) scale(1); }
+  50%     { transform: translateY(-5px) scale(1.015); }
+}
+
+/* 小手（右下侧腮腺鼓起） */
+.mascot .hand {
+  position: absolute;
+  right: 4%; bottom: 30%;
+  width: 22%; height: 22%;
+  border-radius: 50%;
+  background: radial-gradient(120% 120% at 40% 30%, #EE9A66, #DA7038);
+  box-shadow: inset -4px -5px 9px rgba(150,70,30,.3), 0 6px 10px rgba(28,26,23,.12);
+}
+.mascot.is-idle .hand { animation: m-wave 4s ease-in-out infinite; transform-origin: 30% 70%; }
+@keyframes m-wave {
+  0%,88%,100% { transform: rotate(0); }
+  92%         { transform: rotate(-16deg); }
+  96%         { transform: rotate(-4deg); }
+}
+
+/* 眼睛 */
+.mascot .eye {
+  position: absolute;
+  top: 42%;
+  width: 8.5%; height: 11%;
+  background: #2A1B12;
+  border-radius: 50%;
+}
+.mascot .eye.l { left: 34%; }
+.mascot .eye.r { left: 56%; }
+.mascot.is-idle .eye { animation: m-blink 5s infinite; }
+@keyframes m-blink {
+  0%,92%,100% { transform: scaleY(1); }
+  95%         { transform: scaleY(.12); }
+}
+/* 说话时眼睛弯成微笑弧 */
+.mascot.is-talking .eye {
+  height: 5%;
+  border-radius: 0 0 60% 60%;
+  background: transparent;
+  border-bottom: 3px solid #2A1B12;
+}
+
+/* 嘴：idle 微笑，talking 张圆+开合 */
+.mascot .mouth {
+  position: absolute;
+  left: 50%; top: 56%;
+  transform: translateX(-50%);
+  width: 10%; height: 6%;
+  border: 0 solid #2A1B12;
+  border-bottom-width: 3px;
+  border-radius: 0 0 80% 80%;
+}
+.mascot.is-talking .mouth {
+  width: 13%; height: 13%;
+  border-radius: 50%;
+  background: #5A2E18;
+  border: none;
+  animation: m-speak .42s ease-in-out infinite;
+}
+@keyframes m-speak {
+  0%,100% { transform: translateX(-50%) scaleY(.45); }
+  50%     { transform: translateX(-50%) scaleY(1); }
+}
+
+/* 声波涟漪：仅 talking 显示，柔和赤陶橙（非霓虹发光） */
+.mascot .wave {
+  position: absolute;
+  inset: -6%;
+  border-radius: 50%;
+  border: 2px solid var(--color-accent, #E8814A);
+  opacity: 0;
+}
+.mascot.is-talking .wave { animation: m-ripple 2s ease-out infinite; }
+.mascot.is-talking .wave.w2 { animation-delay: .66s; }
+.mascot.is-talking .wave.w3 { animation-delay: 1.33s; }
+.mascot.is-idle .wave { display: none; }
+@keyframes m-ripple {
+  0%   { transform: scale(.74); opacity: .5; }
+  100% { transform: scale(1.5);  opacity: 0; }
+}
