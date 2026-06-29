@@ -201,7 +201,7 @@
   gap: var(--sp-sm);
 }
 .actions,
-.role-actions {
+.button-row {
   display: flex;
   gap: var(--sp-xs);
   flex-wrap: wrap;
@@ -209,6 +209,9 @@
 .actions {
   justify-content: flex-end;
   max-width: 140px;
+}
+.section-actions {
+  margin-top: var(--sp-md);
 }
 .btn,
 .small-btn,
@@ -232,14 +235,18 @@
   background: var(--color-ink);
   color: var(--color-card);
 }
+.btn.block,
+.small-btn.block {
+  width: 100%;
+}
 .danger-btn {
   color: var(--color-danger);
-  background: transparent;
+  background: rgba(194,70,45,.08);
 }
 
 .form {
   display: grid;
-  gap: var(--sp-xs);
+  gap: var(--sp-sm);
   margin-top: var(--sp-md);
 }
 .inline-form {
@@ -260,6 +267,20 @@
   border-radius: 14px;
   background: var(--color-bg-alt);
   color: var(--color-ink);
+}
+.field {
+  display: grid;
+  gap: 6px;
+}
+.field > span {
+  font-size: var(--fs-caption);
+  color: var(--color-sub);
+  font-weight: var(--fw-mid);
+}
+.field small {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-sub);
 }
 .inline-form input {
   flex: 1;
@@ -284,6 +305,135 @@
 .check input {
   width: auto;
   margin-top: 4px;
+}
+
+.role-list {
+  display: grid;
+  gap: var(--sp-md);
+}
+.role-card {
+  border-top: none;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-tint);
+  border-radius: 22px;
+  padding: var(--sp-md);
+}
+.role-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sp-sm);
+}
+.role-top .status-pill {
+  margin-left: 0;
+  max-width: 112px;
+  text-align: center;
+  white-space: normal;
+}
+.role-name {
+  line-height: 1.35;
+  word-break: break-word;
+}
+.role-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: var(--sp-md);
+}
+.role-steps span {
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--color-card);
+  color: var(--color-sub);
+  font-size: 13px;
+  font-weight: var(--fw-mid);
+}
+.role-steps span.done {
+  background: rgba(78,141,110,.16);
+  color: var(--color-success);
+}
+.role-workflow {
+  display: grid;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-md);
+}
+.role-panel {
+  margin-top: 0;
+  padding: var(--sp-md);
+  border-radius: 18px;
+  background: var(--color-card);
+  border: 1px solid rgba(138,129,117,.18);
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  margin-bottom: 2px;
+}
+.panel-title {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-heavy);
+}
+.panel-state {
+  flex: none;
+  font-size: 13px;
+  color: var(--color-sub);
+  background: var(--color-tint);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+}
+.recorder {
+  display: grid;
+  gap: var(--sp-xs);
+  padding: var(--sp-sm);
+  border: 1px dashed rgba(138,129,117,.42);
+  border-radius: 16px;
+  background: var(--color-bg-alt);
+}
+.record-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  gap: var(--sp-xs);
+}
+.record-actions .btn {
+  min-width: 0;
+}
+.audio-preview {
+  width: 100%;
+  min-height: 40px;
+}
+.recorder small {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-sub);
+}
+.role-footer {
+  margin-top: var(--sp-md);
+  padding-top: var(--sp-md);
+  border-top: 1px solid rgba(138,129,117,.22);
+  display: grid;
+  gap: var(--sp-sm);
+}
+.role-secondary-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-xs);
+}
+.role-secondary-actions .btn,
+.role-secondary-actions .danger-btn {
+  min-height: 40px;
+  padding: 8px;
+  font-size: 13px;
+}
+
+@media (min-width: 860px) {
+  .role-workflow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
 }
 
 .cost {
@@ -321,6 +471,9 @@
   display: block;
   font-size: var(--fs-body);
   margin-bottom: 4px;
+}
+.tab span {
+  white-space: nowrap;
 }
 
 @media (max-width: 390px) {

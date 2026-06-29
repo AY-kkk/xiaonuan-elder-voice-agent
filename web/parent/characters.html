@@ -24,17 +24,26 @@
     <section class="card" aria-label="创建角色">
       <div class="card-head"><span class="card-title">创建角色</span></div>
       <form class="form" id="role-form">
-        <input id="role-name" placeholder="角色名字，如：女儿小芳" maxlength="40" />
-        <input id="role-relation" placeholder="和长辈的关系，如：女儿、老伴" maxlength="40" />
-        <input id="role-alias" placeholder="长辈平时怎么称呼 TA，如：小芳" maxlength="40" />
-        <button class="btn primary" type="submit">创建角色</button>
+        <label class="field">
+          <span>角色名字</span>
+          <input id="role-name" placeholder="如：女儿小芳" maxlength="40" />
+        </label>
+        <label class="field">
+          <span>关系</span>
+          <input id="role-relation" placeholder="如：女儿、老伴" maxlength="40" />
+        </label>
+        <label class="field">
+          <span>长辈称呼</span>
+          <input id="role-alias" placeholder="如：小芳" maxlength="40" />
+        </label>
+        <button class="btn primary block" type="submit">创建角色</button>
       </form>
     </section>
 
     <section class="card" aria-label="角色列表">
       <div class="card-head"><span class="card-title">角色列表</span></div>
       <p class="helper">声音和说话方式都准备好后，才能同步给老人端。</p>
-      <div id="roles"><div class="empty">加载中...</div></div>
+      <div id="roles" class="role-list"><div class="empty">加载中...</div></div>
     </section>
 
     <p class="privacy">上传内容只用于本家庭陪伴，不在老人端展示技术状态</p>
@@ -44,6 +53,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="./config.js"></script>
+  <script src="../shared/splash.js"></script>
   <script src="./shared.js"></script>
   <script src="./nav.js"></script>
   <script>
@@ -64,39 +74,92 @@
           box.innerHTML = '<div class="empty">还没有角色。先创建一个，再准备声音和说话方式。</div>';
           return;
         }
-        box.innerHTML = items.map((role) => `
-          <div class="role" data-id="${role.id}">
-            <div class="role-name">${escapeHtml(role.name)}${role.relation ? ` · ${escapeHtml(role.relation)}` : ""}</div>
-            <div class="role-meta">${escapeHtml(roleStateText(role))}</div>
-
-            <form class="form voice-form">
-              <input name="voice_code" placeholder="音色代号 S_xxx" value="${escapeHtml(role.speaker_id || "")}" />
-              <input name="audio" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.pcm" />
-              <p class="helper">授权录音支持 wav/mp3/m4a/aac/ogg/pcm，单个文件不超过 50MB。</p>
-              <label class="check">
-                <input name="auth" type="checkbox" />
-                我确认已获得该声音本人或合法代理人的授权，仅用于陪伴本家庭老人。
-              </label>
-              <button class="btn primary" type="submit">上传授权录音</button>
-            </form>
-
-            <form class="form persona-form">
-              <input name="elder_call_name" placeholder="TA 平时怎么称呼老人，如：爸、妈" maxlength="80" />
-              <input name="tone" placeholder="TA 的语气，如：温柔、直接、爱叮嘱" maxlength="120" />
-              <textarea name="common_words" placeholder="TA 常说的话"></textarea>
-              <textarea name="avoid_topics" placeholder="TA 不应该主动提起的话"></textarea>
-              <input name="chat_record" type="file" accept=".txt,.md,.markdown,.json,.csv,.html,.htm,.docx,.xlsx,.pdf" />
-              <p class="helper">可上传聊天记录：txt、md、json、csv、html、docx、xlsx、pdf。系统会提炼说话方式，不保存原文件。</p>
-              <button class="btn primary" type="submit">生成说话方式</button>
-            </form>
-
-            <div class="role-actions">
-              <button class="btn" data-refresh="${role.id}">刷新准备状态</button>
-              <button class="btn primary" data-sync="${role.id}">同步给老人端</button>
-              <button class="btn" data-activate-role="${role.id}">设为当前通话对象</button>
-              <button class="danger-btn" data-delete-role="${role.id}">删除</button>
+        box.innerHTML = items.map((role) => {
+          const voiceReady = role.voice_status === "ready";
+          const personaReady = role.persona_status === "ready";
+          return `
+          <div class="role role-card" data-id="${role.id}">
+            <div class="role-top">
+              <div>
+                <div class="role-name">${escapeHtml(role.name)}${role.relation ? ` · ${escapeHtml(role.relation)}` : ""}</div>
+                <div class="role-meta">${escapeHtml(roleStateText(role))}</div>
+              </div>
+              <span class="status-pill ${role.sync_status === "ready" ? "pending" : role.sync_status === "active" ? "active" : ""}">${escapeHtml(role.human_status || "准备中")}</span>
             </div>
-          </div>`).join("");
+
+            <div class="role-steps" aria-label="准备进度">
+              <span class="${voiceReady ? "done" : ""}">声音</span>
+              <span class="${personaReady ? "done" : ""}">说话方式</span>
+              <span class="${["synced", "active"].includes(role.sync_status) ? "done" : ""}">同步</span>
+            </div>
+
+            <div class="role-workflow">
+              <form class="form role-panel voice-form">
+                <div class="panel-head">
+                  <span class="panel-title">1. 授权声音</span>
+                  <span class="panel-state">${voiceReady ? "已准备" : "待上传"}</span>
+                </div>
+                <div class="recorder" data-recorder>
+                  <div class="record-actions">
+                    <button class="btn primary" type="button" data-record-start>按住前先点这里录音</button>
+                    <button class="btn" type="button" data-record-stop disabled>停止</button>
+                  </div>
+                  <audio class="audio-preview" controls data-record-preview hidden></audio>
+                  <small data-record-state>也可以直接上传一段已经录好的音频。</small>
+                </div>
+                <label class="field">
+                  <span>上传音频</span>
+                  <input name="audio" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.pcm,.webm,.flac,.mp4,audio/*" />
+                  <small>支持常见音频格式，单个文件不超过 50MB；录音和上传任选一种。</small>
+                </label>
+                <label class="check">
+                  <input name="auth" type="checkbox" />
+                  <span>我确认已获得该声音本人或合法代理人的授权，仅用于陪伴本家庭老人。</span>
+                </label>
+                <button class="btn primary block" type="submit">保存并生成克隆声音</button>
+                <button class="btn block" type="button" data-preview="${role.id}">试听一句</button>
+              </form>
+
+              <form class="form role-panel persona-form">
+                <div class="panel-head">
+                  <span class="panel-title">2. 生成说话方式</span>
+                  <span class="panel-state">${personaReady ? "已生成" : "待生成"}</span>
+                </div>
+                <label class="field">
+                  <span>称呼长辈</span>
+                  <input name="elder_call_name" placeholder="如：爸、妈" maxlength="80" />
+                </label>
+                <label class="field">
+                  <span>语气特点</span>
+                  <input name="tone" placeholder="如：温柔、直接、爱叮嘱" maxlength="120" />
+                </label>
+                <label class="field">
+                  <span>常说的话</span>
+                  <textarea name="common_words" placeholder="填写几句典型表达，或直接上传聊天记录"></textarea>
+                </label>
+                <label class="field">
+                  <span>避免话题</span>
+                  <textarea name="avoid_topics" placeholder="不应该主动提起的话"></textarea>
+                </label>
+                <label class="field">
+                  <span>聊天记录</span>
+                  <input name="chat_record" type="file" accept=".txt,.md,.markdown,.json,.csv,.html,.htm,.docx,.xlsx,.pdf" />
+                  <small>支持 txt、md、json、csv、html、docx、xlsx、pdf；只提炼风格，不保存原文件。</small>
+                </label>
+                <button class="btn primary block" type="submit">生成说话方式</button>
+              </form>
+            </div>
+
+            <div class="role-footer">
+              <button class="btn primary block" data-sync="${role.id}">同步给老人端</button>
+              <div class="role-secondary-actions">
+                <button class="btn" data-refresh="${role.id}">刷新状态</button>
+                <button class="btn" data-activate-role="${role.id}">设为通话对象</button>
+                <button class="danger-btn" data-delete-role="${role.id}">删除</button>
+              </div>
+            </div>
+          </div>`;
+        }).join("");
         bindRoleActions(box);
       } catch (error) {
         box.innerHTML = '<div class="empty">角色加载失败。</div>';
@@ -105,6 +168,7 @@
 
     function bindRoleActions(box) {
       box.querySelectorAll(".voice-form").forEach((form) => {
+        bindVoiceRecorder(form);
         form.addEventListener("submit", uploadVoice);
       });
       box.querySelectorAll(".persona-form").forEach((form) => {
@@ -112,6 +176,9 @@
       });
       box.querySelectorAll("button[data-refresh]").forEach((button) => {
         button.addEventListener("click", () => refreshVoice(button.dataset.refresh));
+      });
+      box.querySelectorAll("button[data-preview]").forEach((button) => {
+        button.addEventListener("click", () => previewVoice(button.dataset.preview));
       });
       box.querySelectorAll("button[data-sync]").forEach((button) => {
         button.addEventListener("click", () => syncRole(button.dataset.sync));
@@ -121,6 +188,59 @@
       });
       box.querySelectorAll("button[data-delete-role]").forEach((button) => {
         button.addEventListener("click", () => deleteRole(button.dataset.deleteRole));
+      });
+    }
+
+    function bindVoiceRecorder(form) {
+      const start = form.querySelector("[data-record-start]");
+      const stop = form.querySelector("[data-record-stop]");
+      const preview = form.querySelector("[data-record-preview]");
+      const state = form.querySelector("[data-record-state]");
+      let recorder = null;
+      let chunks = [];
+
+      start.addEventListener("click", async () => {
+        if (!navigator.mediaDevices || !window.MediaRecorder) {
+          toast("当前浏览器不支持直接录音，请上传音频文件");
+          return;
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          recorder = new MediaRecorder(stream);
+          chunks = [];
+          recorder.addEventListener("dataavailable", (event) => {
+            if (event.data && event.data.size) chunks.push(event.data);
+          });
+          recorder.addEventListener("stop", () => {
+            const mime = recorder.mimeType || "audio/webm";
+            const blob = new Blob(chunks, { type: mime });
+            form._recordedVoice = blob;
+            preview.src = URL.createObjectURL(blob);
+            preview.hidden = false;
+            state.textContent = "已录好一段声音，可以回放确认，也可以重新录。";
+            stream.getTracks().forEach((track) => track.stop());
+          });
+          recorder.start();
+          start.disabled = true;
+          stop.disabled = false;
+          state.textContent = "正在录音，请自然说 10 到 30 秒。";
+        } catch (error) {
+          toast("无法打开麦克风，请检查浏览器授权");
+        }
+      });
+
+      stop.addEventListener("click", () => {
+        if (recorder && recorder.state !== "inactive") recorder.stop();
+        start.disabled = false;
+        stop.disabled = true;
+      });
+
+      form.elements.audio.addEventListener("change", () => {
+        if (form.elements.audio.files[0]) {
+          form._recordedVoice = null;
+          preview.hidden = true;
+          state.textContent = "已选择上传音频，将优先使用这个文件。";
+        }
       });
     }
 
@@ -153,33 +273,41 @@
     async function uploadVoice(event) {
       event.preventDefault();
       const card = event.target.closest(".role");
-      const voiceCode = event.target.elements.voice_code.value.trim();
       const audioFile = event.target.elements.audio.files[0];
+      const recordedVoice = event.target._recordedVoice;
       const authorized = event.target.elements.auth.checked;
-      if (!voiceCode) {
-        toast("请填写音色代号");
-        return;
-      }
-      if (!audioFile) {
-        toast("请选择录音文件");
+      const voiceBlob = audioFile || recordedVoice;
+      if (!voiceBlob) {
+        toast("请先录音或上传一段音频");
         return;
       }
       if (!authorized) {
         toast("请先确认授权");
         return;
       }
+      if (voiceBlob.size > 50 * 1024 * 1024) {
+        toast("音频超过 50MB 上限");
+        return;
+      }
+      const filename = audioFile ? audioFile.name : "recording.webm";
       const formData = new FormData();
-      formData.append("speaker_id", voiceCode);
-      formData.append("audio", audioFile);
+      formData.append("consent", "true");
+      formData.append("consent_text", "父端确认已获得该声音本人或合法代理人授权");
+      formData.append("audio", voiceBlob, filename);
       try {
-        await fetchJson(parentApi(`${ELDER_ID}/characters/${card.dataset.id}/voice`), {
+        const saved = await fetchJson(parentApi(`${ELDER_ID}/characters/${card.dataset.id}/voice/sample`), {
           method: "POST",
           body: formData,
         });
-        toast("已开始准备声音");
+        await fetchJson(parentApi(`${ELDER_ID}/characters/${card.dataset.id}/voice/clone`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sample_id: saved.sample.id }),
+        });
+        toast("已开始准备声音，稍后可刷新状态");
         loadRoles();
       } catch (error) {
-        toast(error.message || "上传失败");
+        toast(error.message || "声音生成失败");
       }
     }
 
@@ -218,11 +346,37 @@
 
     async function refreshVoice(id) {
       try {
-        await fetchJson(parentApi(`${ELDER_ID}/characters/${id}/voice`));
+        await fetchJson(parentApi(`${ELDER_ID}/characters/${id}/voice/status`));
         toast("状态已刷新");
         loadRoles();
       } catch (error) {
-        toast(error.message || "刷新失败");
+        try {
+          await fetchJson(parentApi(`${ELDER_ID}/characters/${id}/voice`));
+          toast("状态已刷新");
+          loadRoles();
+        } catch (fallbackError) {
+          toast(fallbackError.message || "刷新失败");
+        }
+      }
+    }
+
+    async function previewVoice(id) {
+      try {
+        const response = await fetch(parentApi(`${ELDER_ID}/characters/${id}/voice/preview`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: "小暖，陪你唠唠。声音已经准备好了。" }),
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || "试听失败");
+        }
+        const blob = await response.blob();
+        const audio = new Audio(URL.createObjectURL(blob));
+        audio.play();
+        toast("正在播放试听");
+      } catch (error) {
+        toast(error.message || "声音还没准备好");
       }
     }
 

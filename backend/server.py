@@ -23,6 +23,7 @@ from .memory import MemoryService, MemoryStore
 from .signals import SignalService
 from .usage import UsageStore
 from .character import CharacterService, CharacterStore
+from .voice import VoiceService, VoiceStore
 from .api import parent as parent_api
 from .api import elder as elder_api
 from .api import character as character_api
@@ -41,6 +42,8 @@ class AppContainer:
     signals: SignalService
     character_store: CharacterStore
     character: CharacterService
+    voice_store: VoiceStore
+    voice: VoiceService
     jobs: BackgroundJobService
 
 
@@ -57,6 +60,8 @@ def build_container(config: AppConfig | None = None) -> AppContainer:
     signals = SignalService(c.db_path, c.ark, usage_store=usage_store)
     character_store = CharacterStore(c.db_path)
     character = CharacterService(character_store, c.volc, c.ark, usage_store=usage_store)
+    voice_store = VoiceStore(c.db_path)
+    voice = VoiceService(voice_store, character_store)
     jobs = BackgroundJobService(c.db_path)
     return AppContainer(
         cfg=c,
@@ -66,6 +71,8 @@ def build_container(config: AppConfig | None = None) -> AppContainer:
         signals=signals,
         character_store=character_store,
         character=character,
+        voice_store=voice_store,
+        voice=voice,
         jobs=jobs,
     )
 
@@ -90,8 +97,10 @@ _memory = _container.memory
 _signals = _container.signals
 _character_store = _container.character_store
 _character = _container.character
+_voice_store = _container.voice_store
+_voice = _container.voice
 _jobs = _container.jobs
-parent_api.bind(_memory_store, _signals, _usage_store, cfg.ark_price_per_mtoken, _character)
+parent_api.bind(_memory_store, _signals, _usage_store, cfg.ark_price_per_mtoken, _character, _voice)
 elder_api.bind(_memory_store, _character)
 character_api.bind(_character)
 app.include_router(parent_api.router)
@@ -113,6 +122,7 @@ async def _init_db() -> None:
     await _signals.ensure_schema()
     await _usage_store.ensure_schema()
     await _character_store.ensure_schema()
+    await _voice_store.ensure_schema()
     await _jobs.ensure_schema()
 
 

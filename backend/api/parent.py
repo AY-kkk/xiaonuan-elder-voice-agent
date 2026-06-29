@@ -10,6 +10,7 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..character import CharacterService
@@ -21,6 +22,7 @@ from ..character.chat_parser import (
 from ..memory import KEY_FACT_CATEGORIES, MemoryStore
 from ..signals import SignalService
 from ..usage import UsageStore
+from ..voice import VoiceService
 
 router = APIRouter(prefix="/api/parent", tags=["parent"])
 
@@ -29,11 +31,12 @@ _store: Optional[MemoryStore] = None
 _signals: Optional[SignalService] = None
 _usage: Optional[UsageStore] = None
 _character: Optional[CharacterService] = None
+_voice: Optional[VoiceService] = None
 _price_per_mtoken: float = 0.0
 
 _MAX_AUDIO_BYTES = 50 * 1024 * 1024
 _MAX_CHAT_RECORD_BYTES = 20 * 1024 * 1024
-_ALLOWED_FORMATS = {"wav", "mp3", "ogg", "m4a", "aac", "pcm"}
+_ALLOWED_FORMATS = {"wav", "mp3", "ogg", "m4a", "aac", "pcm", "webm", "flac", "mp4"}
 
 
 def bind(
@@ -42,9 +45,10 @@ def bind(
     usage: UsageStore,
     price_per_mtoken: float,
     character: Optional[CharacterService] = None,
+    voice: Optional[VoiceService] = None,
 ) -> None:
-    global _store, _signals, _usage, _price_per_mtoken, _character
-    _store, _signals, _usage, _character = store, signals, usage, character
+    global _store, _signals, _usage, _price_per_mtoken, _character, _voice
+    _store, _signals, _usage, _character, _voice = store, signals, usage, character, voice
     _price_per_mtoken = price_per_mtoken
 
 
@@ -66,6 +70,15 @@ class ParentCharacterIn(BaseModel):
 
 class ParentPersonaIn(BaseModel):
     corpus: str = Field(..., min_length=1, max_length=8000)
+
+
+class ParentVoiceCloneIn(BaseModel):
+    sample_id: Optional[int] = Field(None, description="不传则使用最新授权录音")
+    text: str = Field("", max_length=200, description="可选朗读文本")
+
+
+class ParentVoicePreviewIn(BaseModel):
+    text: str = Field("小暖，陪你唠唠。声音已经准备好了。", max_length=120)
 
 
 class RechargeIn(BaseModel):
@@ -191,6 +204,12 @@ def _require_character() -> CharacterService:
     return _character
 
 
+def _require_voice() -> VoiceService:
+    if _voice is None:
+        raise HTTPException(status_code=404, detail="声音服务未启用")
+    return _voice
+
+
 @router.get("/{elder_id}/characters")
 async def parent_characters(elder_id: str) -> dict:
     return {"items": await _require_character().list(elder_id)}
@@ -205,6 +224,73 @@ async def parent_create_character(elder_id: str, body: ParentCharacterIn) -> dic
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"ok": True, "character": char}
+
+
+@router.post("/{elder_id}/characters/{cid}/voice/sample")
+async def parent_upload_voice_sample(
+    elder_id: str,
+    cid: int,
+    consent: bool = Form(..., description="是否已获得合法授权"),
+    consent_text: str = Form("", description="授权说明"),
+    audio: UploadFile = File(...),
+) -> dict:
+    audio_format = _infer_format(audio)
+    if audio_format not in _ALLOWED_FORMATS:
+        raise HTTPException(status_code=400, detail=f"不支持的音频格式：{audio_format}")
+    data = await audio.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="音频为空")
+    if len(data) > _MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=400, detail="音频超过 50MB 上限")
+    try:
+        result = await _require_voice().save_sample(
+            elder_id=elder_id,
+            character_id=cid,
+            filename=audio.filename or f"sample.{audio_format}",
+            audio_format=audio_format,
+            audio_bytes=data,
+            consent=consent,
+            consent_text=consent_text,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True, **result}
+
+
+@router.post("/{elder_id}/characters/{cid}/voice/clone")
+async def parent_clone_voice(elder_id: str, cid: int, body: ParentVoiceCloneIn) -> dict:
+    try:
+        result = await _require_voice().clone_latest(
+            elder_id=elder_id,
+            character_id=cid,
+            sample_id=body.sample_id,
+            text=body.text,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True, **result}
+
+
+@router.get("/{elder_id}/characters/{cid}/voice/status")
+async def parent_voice_profile_status(elder_id: str, cid: int) -> dict:
+    try:
+        result = await _require_voice().refresh_status(elder_id, cid)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"ok": True, **result}
+
+
+@router.post("/{elder_id}/characters/{cid}/voice/preview")
+async def parent_preview_voice(elder_id: str, cid: int, body: ParentVoicePreviewIn) -> Response:
+    try:
+        preview = await _require_voice().preview(elder_id, cid, body.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return Response(
+        content=preview.audio_bytes,
+        media_type=preview.content_type,
+        headers={"Content-Disposition": f'inline; filename="{preview.filename}"'},
+    )
 
 
 @router.post("/{elder_id}/characters/{cid}/voice")
