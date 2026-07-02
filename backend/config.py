@@ -103,6 +103,10 @@ class AppConfig:
     ark_price_per_mtoken: float = field(
         default_factory=lambda: float(_get("ARK_PRICE_PER_MTOKEN", "0.8"))
     )
+    # 生产建议打开：AUTH_REQUIRED=1，并配置 FAMILY_API_TOKEN。
+    # 本地 demo 默认关闭，避免破坏现有静态页和自动化测试。
+    auth_required: bool = field(default_factory=lambda: _get("AUTH_REQUIRED", "0") == "1")
+    family_api_token: str = field(default_factory=lambda: _get("FAMILY_API_TOKEN", "demo-family-token"))
     volc: VolcConfig = field(default_factory=VolcConfig)
     ark: ArkConfig = field(default_factory=ArkConfig)
 

@@ -14,6 +14,20 @@ const familyNoticeEl = document.getElementById("family-notice");
 const noticeTextEl = document.getElementById("notice-text");
 const noticeAcceptBtn = document.getElementById("notice-accept");
 const noticeLaterBtn = document.getElementById("notice-later");
+const greetingFromEl = document.getElementById("greeting-from");
+const greetingTitleEl = document.getElementById("greeting-title");
+const greetingTextEl = document.getElementById("greeting-text");
+const playGreetingBtn = document.getElementById("play-greeting");
+const quietModeBtn = document.getElementById("quiet-mode");
+const quietStateEl = document.getElementById("quiet-state");
+const emergencyCallEl = document.getElementById("emergency-call");
+const emergencyTextEl = document.getElementById("emergency-text");
+const fallbackCardEl = document.getElementById("fallback-card");
+const fallbackTextEl = document.getElementById("fallback-text");
+const fallbackPlayBtn = document.getElementById("fallback-play");
+const medMainEl = document.getElementById("med-main");
+const medSubEl = document.getElementById("med-sub");
+const medConfirmBtn = document.getElementById("med-confirm");
 
 let ws = null;
 let audioCtx = null;
@@ -22,6 +36,13 @@ let workletNode = null;
 let player = null;
 let live = false;
 let timerId = null, seconds = 0;
+let todayCare = null;
+let quietMode = localStorage.getItem("xiaonuan_quiet_mode") === "1";
+let quietReminderTimer = null;
+let quietReminderIndex = Number(localStorage.getItem("xiaonuan_quiet_reminder_index") || "0");
+let currentMedicationId = null;
+let emergencyContacts = [];
+let serviceWorkerRegistration = null;
 
 // 本地 VAD 即时打断：Agent 出声时连续多帧高能量即判定老人插话，立刻本地停播。
 const VAD_BASE_RMS_THRESHOLD = 0.04;
@@ -52,10 +73,14 @@ function setUiState(state) {
   const c = COPY[state];
   statusEl.textContent = c.title;
   hintEl.textContent = c.hint;
+  if (state === "idle" && quietMode) {
+    hintEl.textContent = "小暖会安静陪着，你想说话时再点大圆圈";
+  }
   textEl.textContent = c.btn;
   // 吉祥物：仅通话中放大到中央，其余回到右上角 idle（CSS 控制过渡）
   const mascot = document.querySelector(".mascot");
   if (state === "talking") {
+    hideFallback();
     document.body.dataset.mascot = "talking";
     mascot.classList.remove("is-idle"); mascot.classList.add("is-talking");
   } else {
@@ -90,7 +115,46 @@ function apiBase() {
 }
 
 function apiUrl(path) {
-  return `${apiBase()}${path}`;
+  return withFamilyToken(`${apiBase()}${path}`);
+}
+
+function familyToken() {
+  return ((window.APP_CONFIG && window.APP_CONFIG.FAMILY_TOKEN) || "").trim();
+}
+
+function withFamilyToken(url) {
+  const token = familyToken();
+  let sessionToken = "";
+  try { sessionToken = localStorage.getItem("xiaonuan_session_token") || ""; } catch (_) {}
+  if (!token && !sessionToken) return url;
+  const join = url.includes("?") ? "&" : "?";
+  if (token) return `${url}${join}family_token=${encodeURIComponent(token)}`;
+  return `${url}${join}session_token=${encodeURIComponent(sessionToken)}`;
+}
+
+function toast(message) {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.textContent = message;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+async function logAction(actionType, detail = "", targetType = "", targetId = null) {
+  try {
+    await fetch(apiUrl(`/api/elder/${ELDER_ID}/actions`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action_type: actionType,
+        target_type: targetType,
+        target_id: targetId,
+        detail,
+      }),
+    });
+  } catch (_) {
+    // 行为日志失败不能打断老人端主流程。
+  }
 }
 
 function wsUrl() {
@@ -98,10 +162,10 @@ function wsUrl() {
   if (base) {
     const u = new URL(base);
     const proto = u.protocol === "https:" ? "wss" : "ws";
-    return `${proto}://${u.host}/ws/elder/${ELDER_ID}`;
+    return withFamilyToken(`${proto}://${u.host}/ws/elder/${ELDER_ID}`);
   }
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}://${location.host}/ws/elder/${ELDER_ID}`;
+  return withFamilyToken(`${proto}://${location.host}/ws/elder/${ELDER_ID}`);
 }
 
 // 启动前健康预检：若后端引擎为 seeduplex 但语音凭证未就绪，提前给出友好提示，
@@ -115,6 +179,7 @@ async function precheckReady() {
     if (h.engine === "seeduplex" && h.volc_ready === false) {
       setUiState("error");
       hintEl.textContent = "语音服务还没配置好，请联系家人帮忙设置";
+      logAction("call_precheck_failed", "voice_credentials_missing");
       return false;
     }
   } catch (_) {
@@ -134,6 +199,200 @@ async function loadCompanionNotice() {
   } catch (_) {
     // 陪伴提示失败不影响老人一键通话。
   }
+}
+
+async function loadTodayCare() {
+  try {
+    todayCare = await fetch(apiUrl(`/api/elder/${ELDER_ID}/today`)).then((x) => x.json());
+    renderTodayCare(todayCare);
+  } catch (_) {
+    todayCare = {
+      greeting: {
+        from: "家人",
+        title: "家人给你留了一句话",
+        text: "今天别着急，慢慢来。想聊天就点小暖，我们都惦记着你。",
+      },
+      medication: {
+        text: "今天先照顾好自己，按平时习惯吃饭、喝水、休息。",
+        sub: "有不舒服就点上面和小暖说",
+      },
+      emergency: { enabled: false, text: "家人还没设置电话。", phone: "" },
+      fallback: { text: "今天别着急，慢慢来。想聊天就点小暖。" },
+    };
+    renderTodayCare(todayCare);
+  }
+}
+
+function renderTodayCare(data) {
+  const greeting = data.greeting || {};
+  greetingFromEl.textContent = greeting.from ? `${greeting.from}问候` : "家人问候";
+  greetingTitleEl.textContent = greeting.title || "家人给你留了一句话";
+  greetingTextEl.textContent = greeting.text || "今天别着急，慢慢来。";
+  const medication = data.medication || {};
+  medMainEl.textContent = medication.text || "今天先照顾好自己";
+  medSubEl.textContent = medication.sub || "有不舒服就点上面和小暖说";
+  currentMedicationId = medication.confirmable ? medication.id : null;
+  const takenKey = currentMedicationId ? `xiaonuan_med_taken_${ELDER_ID}_${currentMedicationId}` : "";
+  const alreadyTaken = takenKey && localStorage.getItem(takenKey) === new Date().toISOString().slice(0, 10);
+  if (currentMedicationId && medConfirmBtn) {
+    medConfirmBtn.hidden = false;
+    medConfirmBtn.textContent = alreadyTaken ? "今天已记录" : "我已吃药";
+    medConfirmBtn.classList.toggle("done", Boolean(alreadyTaken));
+    medConfirmBtn.disabled = Boolean(alreadyTaken);
+  } else if (medConfirmBtn) {
+    medConfirmBtn.hidden = true;
+  }
+  const emergency = data.emergency || {};
+  emergencyContacts = Array.isArray(emergency.contacts) ? emergency.contacts : [];
+  if (emergency.enabled && emergency.phone) {
+    emergencyCallEl.href = `tel:${emergency.phone}`;
+    emergencyTextEl.textContent = emergencyContacts.length > 1 ? `${emergencyContacts.length} 位家人` : "现在拨打";
+    emergencyCallEl.removeAttribute("aria-disabled");
+  } else {
+    emergencyCallEl.href = "#";
+    emergencyTextEl.textContent = "请家人设置";
+    emergencyCallEl.setAttribute("aria-disabled", "true");
+  }
+  fallbackTextEl.textContent = (data.fallback && data.fallback.text) || greetingTextEl.textContent;
+  renderQuietMode();
+  scheduleQuietCompanion();
+}
+
+function renderQuietMode() {
+  quietModeBtn.classList.toggle("on", quietMode);
+  quietStateEl.textContent = quietMode ? "已打开" : "轻轻陪着";
+  if (quietMode) {
+    hintEl.textContent = "小暖会安静陪着，你想说话时再点大圆圈";
+  }
+}
+
+function speak(text) {
+  const content = (text || "").trim();
+  if (!content || !window.speechSynthesis) {
+    toast("这个浏览器暂时不能朗读");
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(content);
+  utterance.lang = "zh-CN";
+  utterance.rate = 0.92;
+  utterance.pitch = 1.0;
+  window.speechSynthesis.speak(utterance);
+}
+
+async function registerPwa() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    serviceWorkerRegistration = await navigator.serviceWorker.register("./sw.js");
+  } catch (_) {
+    serviceWorkerRegistration = null;
+  }
+}
+
+async function ensureNotificationPermission() {
+  if (!("Notification" in window)) return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
+  const permission = await Notification.requestPermission();
+  return permission === "granted";
+}
+
+async function showReminderNotification(text) {
+  if (!(await ensureNotificationPermission())) return false;
+  const title = "小暖提醒";
+  const options = { body: text, tag: "xiaonuan-care-reminder" };
+  if (serviceWorkerRegistration) {
+    await serviceWorkerRegistration.showNotification(title, options);
+  } else {
+    new Notification(title, options);
+  }
+  return true;
+}
+
+async function confirmMedicationTaken() {
+  if (!currentMedicationId) return;
+  try {
+    const response = await fetch(apiUrl(`/api/elder/${ELDER_ID}/medications/${currentMedicationId}/taken`), {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error("confirm_failed");
+    localStorage.setItem(
+      `xiaonuan_med_taken_${ELDER_ID}_${currentMedicationId}`,
+      new Date().toISOString().slice(0, 10),
+    );
+    medConfirmBtn.textContent = "今天已记录";
+    medConfirmBtn.classList.add("done");
+    medConfirmBtn.disabled = true;
+    toast("已告诉家人");
+  } catch (_) {
+    toast("暂时没记上，请等会儿再点");
+  }
+}
+
+function confirmEmergencyCall(event) {
+  if (emergencyCallEl.getAttribute("aria-disabled") === "true") {
+    event.preventDefault();
+    hintEl.textContent = "请让家人在子女端添加紧急联系人电话";
+    toast("还没有电话");
+    return;
+  }
+  const first = emergencyContacts[0] || { name: "家人", phone: emergencyCallEl.href.replace(/^tel:/, "") };
+  const message = `要现在拨打${first.name}${first.phone ? `（${first.phone}）` : ""}吗？`;
+  if (!window.confirm(message)) {
+    event.preventDefault();
+    logAction("emergency_call_cancelled", first.name || "", "contact", first.id || null);
+    return;
+  }
+  logAction("emergency_call_clicked", `${first.name} ${first.phone || ""}`.trim(), "contact", first.id || null);
+}
+
+function showFallback() {
+  if (!fallbackCardEl) return;
+  fallbackCardEl.classList.add("show");
+}
+
+function hideFallback() {
+  if (!fallbackCardEl) return;
+  fallbackCardEl.classList.remove("show");
+}
+
+function scheduleQuietCompanion() {
+  clearTimeout(quietReminderTimer);
+  quietReminderTimer = null;
+  if (!quietMode || !todayCare || live) return;
+  const policy = todayCare.quiet_companion || {};
+  const firstDelay = Math.max(30, Number(policy.first_prompt_after_seconds || 90)) * 1000;
+  quietReminderTimer = setTimeout(runQuietReminder, firstDelay);
+}
+
+function runQuietReminder() {
+  clearTimeout(quietReminderTimer);
+  quietReminderTimer = null;
+  if (!quietMode || live) {
+    scheduleQuietCompanion();
+    return;
+  }
+  const reminders = (
+    todayCare &&
+    todayCare.quiet_companion &&
+    Array.isArray(todayCare.quiet_companion.reminders)
+  ) ? todayCare.quiet_companion.reminders : [];
+  const fallback = fallbackTextEl.textContent || greetingTextEl.textContent;
+  const item = reminders.length ? reminders[quietReminderIndex % reminders.length] : { text: fallback };
+  quietReminderIndex += 1;
+  localStorage.setItem("xiaonuan_quiet_reminder_index", String(quietReminderIndex));
+  const text = item.text || fallback;
+  if (document.hidden) {
+    showReminderNotification(text);
+  } else {
+    showText("assistant", text);
+    speak(text);
+  }
+  const interval = Math.max(
+    300,
+    Number(todayCare.quiet_companion && todayCare.quiet_companion.reminder_interval_seconds || 1800)
+  ) * 1000;
+  quietReminderTimer = setTimeout(runQuietReminder, interval);
 }
 
 async function activateNoticeCompanion() {
@@ -158,6 +417,8 @@ async function dismissNoticeCompanion() {
 }
 
 async function start() {
+  clearTimeout(quietReminderTimer);
+  quietReminderTimer = null;
   setUiState("connecting");
   btn.disabled = true;
 
@@ -207,7 +468,12 @@ function openSocket() {
     ws.onmessage = onMessage;
     ws.onclose = () => {
       if (!settled) { settled = true; reject(new Error("connect_closed")); return; }
-      if (live) setUiState("idle");
+      if (live) {
+        setUiState("error");
+        hintEl.textContent = "通话断开了，点大圆圈可以重新接通";
+        showFallback();
+        logAction("call_disconnected", "websocket_closed");
+      }
       cleanupAfterStop();
     };
     ws.onerror = () => {
@@ -226,7 +492,7 @@ function failStart(err) {
   if (ws) { try { ws.close(); } catch (_) {} ws = null; }
   setUiState("error");
   if (msg.includes("NotAllowed") || msg.includes("Permission")) {
-    hintEl.textContent = "需要您允许使用麦克风，才能说话哦";
+    hintEl.textContent = "请在浏览器弹窗里点允许麦克风，然后再点大圆圈";
   } else if (msg.includes("NotFound") || msg.includes("Devices")) {
     hintEl.textContent = "没有找到麦克风，请检查设备后再试";
   } else if (msg.includes("connect")) {
@@ -234,6 +500,8 @@ function failStart(err) {
   } else {
     hintEl.textContent = "出了点小问题，请点圆圈再试一次";
   }
+  logAction("call_failed", msg);
+  showFallback();
   btn.disabled = false;
 }
 
@@ -319,6 +587,7 @@ function stop() {
   }
   setUiState("idle");
   cleanupAfterStop();
+  scheduleQuietCompanion();
 }
 
 function cleanupAfterStop() {
@@ -342,4 +611,35 @@ btn.addEventListener("click", () => {
 
 if (noticeAcceptBtn) noticeAcceptBtn.addEventListener("click", activateNoticeCompanion);
 if (noticeLaterBtn) noticeLaterBtn.addEventListener("click", dismissNoticeCompanion);
+if (playGreetingBtn) {
+  playGreetingBtn.addEventListener("click", () => {
+    speak(greetingTextEl.textContent);
+    logAction("greeting_played", greetingTextEl.textContent);
+  });
+}
+if (fallbackPlayBtn) {
+  fallbackPlayBtn.addEventListener("click", () => {
+    speak(fallbackTextEl.textContent);
+    logAction("fallback_played", fallbackTextEl.textContent);
+  });
+}
+if (quietModeBtn) {
+  quietModeBtn.addEventListener("click", () => {
+    quietMode = !quietMode;
+    localStorage.setItem("xiaonuan_quiet_mode", quietMode ? "1" : "0");
+    renderQuietMode();
+    scheduleQuietCompanion();
+    if (quietMode) ensureNotificationPermission();
+    toast(quietMode ? "安心陪伴已打开" : "安心陪伴已关闭");
+  });
+}
+if (emergencyCallEl) {
+  emergencyCallEl.addEventListener("click", confirmEmergencyCall);
+}
+if (medConfirmBtn) medConfirmBtn.addEventListener("click", confirmMedicationTaken);
+loadTodayCare();
 loadCompanionNotice();
+registerPwa();
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) scheduleQuietCompanion();
+});

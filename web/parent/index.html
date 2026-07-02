@@ -36,6 +36,22 @@
       <p class="state-line" id="state-line">一切如常，继续保持</p>
     </section>
 
+    <section class="card" aria-label="每日问候">
+      <div class="card-head"><span class="card-title">每日问候</span></div>
+      <p class="helper" id="daily-greeting-current">加载中...</p>
+      <form class="form" id="daily-greeting-form">
+        <label class="field">
+          <span>署名</span>
+          <input id="daily-greeting-sender" value="家人" maxlength="30" />
+        </label>
+        <label class="field">
+          <span>给长辈的一句话</span>
+          <textarea id="daily-greeting-text" maxlength="160" placeholder="如：爸，今天别着急，慢慢来。晚上我再给你电话。"></textarea>
+        </label>
+        <button class="btn primary block" type="submit">同步到老人端</button>
+      </form>
+    </section>
+
     <section class="card" aria-label="每日信号">
       <div class="card-head"><span class="card-title">每日信号</span></div>
       <div id="signals"><div class="empty">加载中...</div></div>
@@ -44,6 +60,11 @@
     <section class="card" aria-label="最新提醒">
       <div class="card-head"><span class="card-title">最新提醒</span></div>
       <p class="state-line" id="latest-tip">有需要确认的事项时，会在“事项”里出现。</p>
+    </section>
+
+    <section class="card" aria-label="照护记录">
+      <div class="card-head"><span class="card-title">照护记录</span></div>
+      <div id="care-actions"><div class="empty">加载中...</div></div>
     </section>
 
     <p class="privacy">只展示状态信号，不展示原始对话内容</p>
@@ -62,6 +83,7 @@
       parentApi,
       escapeHtml,
       fetchJson,
+      toast,
       formatTime,
       levelText,
     } = window.ParentShared;
@@ -83,6 +105,19 @@
       if (signal.level === "urgent") return "需要你多留意长辈";
       if (signal.level === "attention") return "长辈今天有点小状况";
       return "长辈今天状态不错";
+    }
+
+    function suggestedAction(signal) {
+      if (signal.level === "urgent") return "建议现在打电话确认，必要时联系附近家人。";
+      if (signal.review_required) return "建议轻量确认一下，可能只是回忆或电视内容。";
+      if (signal.level === "attention") return "建议今晚主动问候，顺便确认身体和用药。";
+      return "暂无需要立即处理的动作，保持日常问候即可。";
+    }
+
+    function riskExplanation(signal) {
+      const mentions = (signal.mentions || []).map((item) => `${item.topic} ${item.count} 次`).join("、");
+      if (!mentions) return "没有检测到明显风险话题。";
+      return `检测到 ${mentions}，系统只保留结论标签，不展示原始对话。`;
     }
 
     async function loadSignals() {
@@ -113,6 +148,9 @@
                 ${formatTime(signal.created_at)} · 置信度 ${Math.round((signal.confidence || 0.8) * 100)}%
                 ${signal.review_required ? '<span class="signal-review">需确认</span>' : ""}
               </div>
+              <div class="signal-meta">${escapeHtml(riskExplanation(signal))}</div>
+              <div class="signal-meta">建议动作：${escapeHtml(suggestedAction(signal))}</div>
+              <div class="signal-meta">隐私说明：这里只展示状态结论，不展示原始对话。</div>
             </div>
           </div>`).join("");
       } catch (error) {
@@ -120,6 +158,79 @@
       }
     }
 
+    async function loadDailyGreeting() {
+      try {
+        const data = await fetchJson(parentApi(`${ELDER_ID}/daily_greeting`));
+        const current = document.getElementById("daily-greeting-current");
+        if (data.greeting) {
+          current.textContent = `${data.greeting.sender_name}：${data.greeting.text}`;
+          document.getElementById("daily-greeting-sender").value = data.greeting.sender_name;
+          document.getElementById("daily-greeting-text").value = data.greeting.text;
+        } else {
+          current.textContent = `还没有家人问候。建议：${data.suggestion || "今天别着急，慢慢来。"}`;
+        }
+      } catch (error) {
+        document.getElementById("daily-greeting-current").textContent = "问候加载失败，稍后再试。";
+      }
+    }
+
+    async function saveDailyGreeting(event) {
+      event.preventDefault();
+      const sender = document.getElementById("daily-greeting-sender").value.trim() || "家人";
+      const text = document.getElementById("daily-greeting-text").value.trim();
+      if (!text) {
+        toast("请写一句问候");
+        return;
+      }
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/daily_greeting`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sender_name: sender, text }),
+        });
+        toast("已同步到老人端");
+        loadDailyGreeting();
+      } catch (error) {
+        toast(error.message || "同步失败");
+      }
+    }
+
+    function actionText(action) {
+      const map = {
+        greeting_played: "长辈播放了问候",
+        fallback_played: "通话失败后播放了兜底问候",
+        call_failed: "长辈通话未接通",
+        emergency_call_clicked: "长辈点击了叫家人",
+        emergency_call_cancelled: "长辈取消了叫家人",
+        medication_taken: "长辈确认已吃药",
+      };
+      return map[action.action_type] || action.action_type || "照护动作";
+    }
+
+    async function loadCareActions() {
+      const box = document.getElementById("care-actions");
+      try {
+        const { items = [] } = await fetchJson(parentApi(`${ELDER_ID}/care_actions`));
+        if (!items.length) {
+          box.innerHTML = '<div class="empty">还没有照护动作。长辈播放问候、确认吃药或叫家人后会显示在这里。</div>';
+          return;
+        }
+        box.innerHTML = items.slice(0, 5).map((item) => `
+          <div class="signal">
+            <span class="signal-ico">${signalIcon.normal}</span>
+            <div class="signal-body">
+              <div class="signal-sum">${escapeHtml(actionText(item))}</div>
+              <div class="signal-meta">${formatTime(item.created_at)}${item.detail ? ` · ${escapeHtml(item.detail)}` : ""}</div>
+            </div>
+          </div>`).join("");
+      } catch (error) {
+        box.innerHTML = '<div class="empty">照护记录加载失败。</div>';
+      }
+    }
+
+    document.getElementById("daily-greeting-form").addEventListener("submit", saveDailyGreeting);
+    loadDailyGreeting();
+    loadCareActions();
     loadSignals();
   </script>
 </body>

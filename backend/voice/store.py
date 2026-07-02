@@ -6,11 +6,14 @@ only metadata and provider identifiers so future providers can be swapped safely
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 from pathlib import Path
 from typing import Optional
 
 import aiosqlite
+
+from .crypto import decrypt_sample, encrypt_sample
 
 VOICE_PROFILE_STATUSES = ("none", "training", "ready", "failed")
 
@@ -26,6 +29,9 @@ CREATE TABLE IF NOT EXISTS voice_samples (
     storage_path    TEXT NOT NULL,
     consent         INTEGER NOT NULL DEFAULT 0,
     consent_text    TEXT NOT NULL DEFAULT '',
+    retention_until REAL,
+    deleted_at      REAL,
+    encrypted       INTEGER NOT NULL DEFAULT 1,
     created_at      REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_voice_samples_character
@@ -60,7 +66,19 @@ class VoiceStore:
         self._sample_dir.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await db.executescript(_SCHEMA)
+            await self._migrate(db)
             await db.commit()
+
+    async def _migrate(self, db: aiosqlite.Connection) -> None:
+        cols = await _column_names(db, "voice_samples")
+        additions = {
+            "retention_until": "ALTER TABLE voice_samples ADD COLUMN retention_until REAL",
+            "deleted_at": "ALTER TABLE voice_samples ADD COLUMN deleted_at REAL",
+            "encrypted": "ALTER TABLE voice_samples ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0",
+        }
+        for name, sql in additions.items():
+            if name not in cols:
+                await db.execute(sql)
 
     async def create_sample(
         self,
@@ -72,17 +90,18 @@ class VoiceStore:
         audio_bytes: bytes,
         consent: bool,
         consent_text: str,
+        retention_days: int = 30,
     ) -> dict:
         now = time.time()
         digest = hashlib.sha256(audio_bytes).hexdigest()
         ext = audio_format or "bin"
-        path = self._sample_dir / f"{elder_id}_{character_id}_{int(now)}_{digest[:12]}.{ext}"
-        path.write_bytes(audio_bytes)
+        path = self._sample_dir / f"{elder_id}_{character_id}_{int(now)}_{digest[:12]}.{ext}.enc"
+        path.write_bytes(encrypt_sample(audio_bytes))
         async with aiosqlite.connect(self._db_path) as db:
             cur = await db.execute(
                 "INSERT INTO voice_samples"
-                "(elder_id, character_id, filename, audio_format, bytes_size, sha256, storage_path, consent, consent_text, created_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "(elder_id, character_id, filename, audio_format, bytes_size, sha256, storage_path, consent, consent_text, retention_until, deleted_at, encrypted, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     elder_id,
                     character_id,
@@ -93,6 +112,9 @@ class VoiceStore:
                     str(path),
                     1 if consent else 0,
                     consent_text,
+                    now + retention_days * 86400 if retention_days else None,
+                    None,
+                    1,
                     now,
                 ),
             )
@@ -108,6 +130,7 @@ class VoiceStore:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 "SELECT * FROM voice_samples WHERE elder_id=? AND character_id=? "
+                "AND deleted_at IS NULL "
                 "ORDER BY created_at DESC LIMIT 1",
                 (elder_id, character_id),
             )
@@ -118,11 +141,71 @@ class VoiceStore:
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
-                "SELECT * FROM voice_samples WHERE elder_id=? AND character_id=? AND id=?",
+                "SELECT * FROM voice_samples WHERE elder_id=? AND character_id=? AND id=? AND deleted_at IS NULL",
                 (elder_id, character_id, sample_id),
             )
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def delete_samples(self, elder_id: str, character_id: int) -> int:
+        samples = await self._samples_for_character(elder_id, character_id)
+        deleted = 0
+        now = time.time()
+        async with aiosqlite.connect(self._db_path) as db:
+            for sample in samples:
+                if _unlink_sample(sample.get("storage_path", "")):
+                    deleted += 1
+                await db.execute(
+                    "UPDATE voice_samples SET deleted_at=?, storage_path='' WHERE id=?",
+                    (now, sample["id"]),
+                )
+            await db.commit()
+        return deleted
+
+    async def cleanup_expired_samples(self, now: float | None = None) -> int:
+        ts = now or time.time()
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                "SELECT * FROM voice_samples WHERE deleted_at IS NULL "
+                "AND retention_until IS NOT NULL AND retention_until<?",
+                (ts,),
+            )
+            rows = [dict(row) for row in await cur.fetchall()]
+            deleted = 0
+            for sample in rows:
+                if _unlink_sample(sample.get("storage_path", "")):
+                    deleted += 1
+                await db.execute(
+                    "UPDATE voice_samples SET deleted_at=?, storage_path='' WHERE id=?",
+                    (ts, sample["id"]),
+                )
+            await db.commit()
+            return deleted
+
+    def read_sample_bytes(self, sample: dict) -> bytes:
+        path = sample.get("storage_path") or ""
+        raw = Path(path).read_bytes()
+        if sample.get("encrypted"):
+            return decrypt_sample(raw)
+        return raw
+
+    async def _samples_for_character(self, elder_id: str, character_id: int) -> list[dict]:
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                "SELECT * FROM voice_samples WHERE elder_id=? AND character_id=? AND deleted_at IS NULL",
+                (elder_id, character_id),
+            )
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def delete_profiles(self, elder_id: str, character_id: int) -> None:
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "DELETE FROM voice_profiles WHERE elder_id=? AND character_id=?",
+                (elder_id, character_id),
+            )
+            await db.commit()
 
     async def upsert_profile(
         self,
@@ -176,3 +259,18 @@ class VoiceStore:
             )
             row = await cur.fetchone()
             return dict(row) if row else None
+
+
+def _unlink_sample(path: str) -> bool:
+    if not path:
+        return False
+    try:
+        os.remove(path)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+async def _column_names(db: aiosqlite.Connection, table: str) -> set:
+    cursor = await db.execute(f"PRAGMA table_info({table})")
+    return {row[1] for row in await cursor.fetchall()}

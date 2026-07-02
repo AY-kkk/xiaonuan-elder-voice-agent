@@ -13,6 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from ..care import ElderCareService
 from ..character import CharacterService
 from ..character.chat_parser import (
     SUPPORTED_CHAT_EXTENSIONS,
@@ -32,6 +33,7 @@ _signals: Optional[SignalService] = None
 _usage: Optional[UsageStore] = None
 _character: Optional[CharacterService] = None
 _voice: Optional[VoiceService] = None
+_care: Optional[ElderCareService] = None
 _price_per_mtoken: float = 0.0
 
 _MAX_AUDIO_BYTES = 50 * 1024 * 1024
@@ -46,9 +48,17 @@ def bind(
     price_per_mtoken: float,
     character: Optional[CharacterService] = None,
     voice: Optional[VoiceService] = None,
+    care: Optional[ElderCareService] = None,
 ) -> None:
-    global _store, _signals, _usage, _price_per_mtoken, _character, _voice
-    _store, _signals, _usage, _character, _voice = store, signals, usage, character, voice
+    global _store, _signals, _usage, _price_per_mtoken, _character, _voice, _care
+    _store, _signals, _usage, _character, _voice, _care = (
+        store,
+        signals,
+        usage,
+        character,
+        voice,
+        care,
+    )
     _price_per_mtoken = price_per_mtoken
 
 
@@ -79,6 +89,25 @@ class ParentVoiceCloneIn(BaseModel):
 
 class ParentVoicePreviewIn(BaseModel):
     text: str = Field("小暖，陪你唠唠。声音已经准备好了。", max_length=120)
+
+
+class DailyGreetingIn(BaseModel):
+    sender_name: str = Field("家人", min_length=1, max_length=30)
+    text: str = Field(..., min_length=1, max_length=160)
+
+
+class EmergencyContactIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=40)
+    phone: str = Field(..., min_length=1, max_length=30)
+    relation: str = Field("", max_length=40)
+    priority: int = Field(1, ge=1, le=20)
+
+
+class MedicationReminderIn(BaseModel):
+    medicine_name: str = Field(..., min_length=1, max_length=60)
+    schedule_text: str = Field(..., min_length=1, max_length=80)
+    dosage: str = Field("", max_length=60)
+    note: str = Field("", max_length=120)
 
 
 class RechargeIn(BaseModel):
@@ -210,6 +239,85 @@ def _require_voice() -> VoiceService:
     return _voice
 
 
+def _require_care() -> ElderCareService:
+    if _care is None:
+        raise HTTPException(status_code=404, detail="关怀服务未启用")
+    return _care
+
+
+@router.get("/{elder_id}/daily_greeting")
+async def parent_daily_greeting(elder_id: str) -> dict:
+    return await _require_care().parent_greeting(elder_id)
+
+
+@router.post("/{elder_id}/daily_greeting")
+async def parent_set_daily_greeting(elder_id: str, body: DailyGreetingIn) -> dict:
+    try:
+        result = await _require_care().set_parent_greeting(
+            elder_id, body.sender_name, body.text
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True, **result}
+
+
+@router.get("/{elder_id}/emergency_contacts")
+async def parent_emergency_contacts(elder_id: str) -> dict:
+    return await _require_care().parent_contacts(elder_id)
+
+
+@router.post("/{elder_id}/emergency_contacts")
+async def parent_add_emergency_contact(elder_id: str, body: EmergencyContactIn) -> dict:
+    try:
+        result = await _require_care().add_parent_contact(
+            elder_id,
+            body.name,
+            body.phone,
+            relation=body.relation,
+            priority=body.priority,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True, **result}
+
+
+@router.delete("/{elder_id}/emergency_contacts/{contact_id}")
+async def parent_delete_emergency_contact(elder_id: str, contact_id: int) -> dict:
+    await _require_care().delete_parent_contact(elder_id, contact_id)
+    return {"ok": True}
+
+
+@router.get("/{elder_id}/medications")
+async def parent_medications(elder_id: str) -> dict:
+    return await _require_care().parent_medications(elder_id)
+
+
+@router.post("/{elder_id}/medications")
+async def parent_add_medication(elder_id: str, body: MedicationReminderIn) -> dict:
+    try:
+        result = await _require_care().add_parent_medication(
+            elder_id,
+            body.medicine_name,
+            body.schedule_text,
+            dosage=body.dosage,
+            note=body.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True, **result}
+
+
+@router.delete("/{elder_id}/medications/{medication_id}")
+async def parent_delete_medication(elder_id: str, medication_id: int) -> dict:
+    await _require_care().delete_parent_medication(elder_id, medication_id)
+    return {"ok": True}
+
+
+@router.get("/{elder_id}/care_actions")
+async def parent_care_actions(elder_id: str) -> dict:
+    return await _require_care().recent_elder_actions(elder_id, limit=20)
+
+
 @router.get("/{elder_id}/characters")
 async def parent_characters(elder_id: str) -> dict:
     return {"items": await _require_character().list(elder_id)}
@@ -291,6 +399,20 @@ async def parent_preview_voice(elder_id: str, cid: int, body: ParentVoicePreview
         media_type=preview.content_type,
         headers={"Content-Disposition": f'inline; filename="{preview.filename}"'},
     )
+
+
+@router.delete("/{elder_id}/characters/{cid}/voice_data")
+async def parent_delete_voice_data(elder_id: str, cid: int) -> dict:
+    try:
+        result = await _require_voice().delete_voice_data(elder_id, cid)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"ok": True, **result}
+
+
+@router.post("/{elder_id}/voice_samples/cleanup")
+async def parent_cleanup_voice_samples(elder_id: str) -> dict:
+    return {"ok": True, **await _require_voice().cleanup_expired_samples()}
 
 
 @router.post("/{elder_id}/characters/{cid}/voice")

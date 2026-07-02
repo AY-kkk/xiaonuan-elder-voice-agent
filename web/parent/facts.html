@@ -21,6 +21,52 @@
       </div>
     </header>
 
+    <section class="card" aria-label="紧急联系人">
+      <div class="card-head"><span class="card-title">紧急联系人</span></div>
+      <p class="helper">老人端“叫家人”会按顺序优先联系这里的人。</p>
+      <div id="contacts"><div class="empty">加载中...</div></div>
+      <form class="form" id="contact-form">
+        <label class="field">
+          <span>姓名</span>
+          <input id="contact-name" placeholder="如：女儿小芳" maxlength="40" />
+        </label>
+        <label class="field">
+          <span>电话</span>
+          <input id="contact-phone" placeholder="如：13800138000" maxlength="30" inputmode="tel" />
+        </label>
+        <label class="field">
+          <span>关系</span>
+          <input id="contact-relation" placeholder="如：女儿、儿子、邻居" maxlength="40" />
+        </label>
+        <button class="btn primary block" type="submit">添加联系人</button>
+      </form>
+    </section>
+
+    <section class="card" aria-label="用药提醒">
+      <div class="card-head"><span class="card-title">用药提醒</span></div>
+      <p class="helper">老人端会显示第一条用药提醒，并支持“我已吃药”。</p>
+      <div id="medications"><div class="empty">加载中...</div></div>
+      <form class="form" id="medication-form">
+        <label class="field">
+          <span>药品名称</span>
+          <input id="medication-name" placeholder="如：氨氯地平" maxlength="60" />
+        </label>
+        <label class="field">
+          <span>提醒时间</span>
+          <input id="medication-schedule" placeholder="如：每天早饭后" maxlength="80" />
+        </label>
+        <label class="field">
+          <span>剂量</span>
+          <input id="medication-dosage" placeholder="如：5mg · 1片" maxlength="60" />
+        </label>
+        <label class="field">
+          <span>备注</span>
+          <input id="medication-note" placeholder="如：饭后服用" maxlength="120" />
+        </label>
+        <button class="btn primary block" type="submit">添加用药提醒</button>
+      </form>
+    </section>
+
     <section class="card" aria-label="重点事项">
       <div class="card-head"><span class="card-title">重点事项</span></div>
       <div id="facts"><div class="empty">加载中...</div></div>
@@ -98,6 +144,132 @@
         });
       } catch (error) {
         box.innerHTML = '<div class="empty">重点事项加载失败。</div>';
+      }
+    }
+
+    async function loadContacts() {
+      const box = document.getElementById("contacts");
+      try {
+        const { items = [] } = await fetchJson(parentApi(`${ELDER_ID}/emergency_contacts`));
+        if (!items.length) {
+          box.innerHTML = '<div class="empty">还没有紧急联系人。添加后，老人端会出现可拨打入口。</div>';
+          return;
+        }
+        box.innerHTML = items.map((item) => `
+          <div class="fact">
+            <div class="fact-body">
+              <div class="fact-name">${escapeHtml(item.name)} <span class="tag">${escapeHtml(item.relation || "联系人")}</span></div>
+              <div class="fact-meta">${escapeHtml(item.phone)} · 优先级 ${escapeHtml(item.priority)}</div>
+            </div>
+            <div class="actions">
+              <button class="danger-btn" data-delete-contact="${item.id}">删除</button>
+            </div>
+          </div>`).join("");
+        box.querySelectorAll("button[data-delete-contact]").forEach((button) => {
+          button.addEventListener("click", () => deleteContact(button.dataset.deleteContact));
+        });
+      } catch (error) {
+        box.innerHTML = '<div class="empty">紧急联系人加载失败。</div>';
+      }
+    }
+
+    async function addContact(event) {
+      event.preventDefault();
+      const name = document.getElementById("contact-name").value.trim();
+      const phone = document.getElementById("contact-phone").value.trim();
+      if (!name || !phone) {
+        toast("请填写姓名和电话");
+        return;
+      }
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/emergency_contacts`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            phone,
+            relation: document.getElementById("contact-relation").value.trim(),
+            priority: 1,
+          }),
+        });
+        document.getElementById("contact-form").reset();
+        toast("联系人已添加");
+        loadContacts();
+      } catch (error) {
+        toast(error.message || "添加失败");
+      }
+    }
+
+    async function deleteContact(id) {
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/emergency_contacts/${id}`), { method: "DELETE" });
+        toast("联系人已删除");
+        loadContacts();
+      } catch (error) {
+        toast(error.message || "删除失败");
+      }
+    }
+
+    async function loadMedications() {
+      const box = document.getElementById("medications");
+      try {
+        const { items = [] } = await fetchJson(parentApi(`${ELDER_ID}/medications`));
+        if (!items.length) {
+          box.innerHTML = '<div class="empty">还没有结构化用药提醒。</div>';
+          return;
+        }
+        box.innerHTML = items.map((item) => `
+          <div class="fact">
+            <div class="fact-body">
+              <div class="fact-name">${escapeHtml(item.medicine_name)} <span class="tag">${escapeHtml(item.schedule_text)}</span></div>
+              <div class="fact-meta">${escapeHtml([item.dosage, item.note].filter(Boolean).join(" · ") || "家人设置")}</div>
+            </div>
+            <div class="actions">
+              <button class="danger-btn" data-delete-medication="${item.id}">删除</button>
+            </div>
+          </div>`).join("");
+        box.querySelectorAll("button[data-delete-medication]").forEach((button) => {
+          button.addEventListener("click", () => deleteMedication(button.dataset.deleteMedication));
+        });
+      } catch (error) {
+        box.innerHTML = '<div class="empty">用药提醒加载失败。</div>';
+      }
+    }
+
+    async function addMedication(event) {
+      event.preventDefault();
+      const medicineName = document.getElementById("medication-name").value.trim();
+      const scheduleText = document.getElementById("medication-schedule").value.trim();
+      if (!medicineName || !scheduleText) {
+        toast("请填写药品名称和提醒时间");
+        return;
+      }
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/medications`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            medicine_name: medicineName,
+            schedule_text: scheduleText,
+            dosage: document.getElementById("medication-dosage").value.trim(),
+            note: document.getElementById("medication-note").value.trim(),
+          }),
+        });
+        document.getElementById("medication-form").reset();
+        toast("用药提醒已添加");
+        loadMedications();
+      } catch (error) {
+        toast(error.message || "添加失败");
+      }
+    }
+
+    async function deleteMedication(id) {
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/medications/${id}`), { method: "DELETE" });
+        toast("用药提醒已删除");
+        loadMedications();
+      } catch (error) {
+        toast(error.message || "删除失败");
       }
     }
 
@@ -203,6 +375,10 @@
     }
 
     document.getElementById("fact-form").addEventListener("submit", addFact);
+    document.getElementById("contact-form").addEventListener("submit", addContact);
+    document.getElementById("medication-form").addEventListener("submit", addMedication);
+    loadContacts();
+    loadMedications();
     loadCategories().then(loadFacts).catch(() => {
       document.getElementById("category").innerHTML = "<option>其他</option>";
       loadFacts();

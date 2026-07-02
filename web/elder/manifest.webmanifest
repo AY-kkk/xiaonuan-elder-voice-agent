@@ -1,0 +1,9 @@
+{
+  "name": "小暖老人端",
+  "short_name": "小暖",
+  "start_url": "/elder/index.html",
+  "display": "standalone",
+  "background_color": "#E9E3DA",
+  "theme_color": "#E8814A",
+  "icons": []
+}

@@ -9,7 +9,22 @@
 
   function parentApi(path) {
     const cleanPath = String(path || "").replace(/^\/+/, "");
-    return `${apiBase()}/api/parent/${cleanPath}`;
+    return withFamilyToken(`${apiBase()}/api/parent/${cleanPath}`);
+  }
+
+  function familyToken() {
+    return ((window.APP_CONFIG && window.APP_CONFIG.FAMILY_TOKEN) || "").trim();
+  }
+
+  function withFamilyToken(url) {
+    const token = familyToken();
+    const sessionToken = (() => {
+      try { return localStorage.getItem("xiaonuan_session_token") || ""; } catch (_) { return ""; }
+    })();
+    if (!token && !sessionToken) return url;
+    const join = url.includes("?") ? "&" : "?";
+    if (token) return `${url}${join}family_token=${encodeURIComponent(token)}`;
+    return `${url}${join}session_token=${encodeURIComponent(sessionToken)}`;
   }
 
   function escapeHtml(value) {

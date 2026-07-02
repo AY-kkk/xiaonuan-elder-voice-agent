@@ -42,7 +42,7 @@
 
     <section class="card" aria-label="角色列表">
       <div class="card-head"><span class="card-title">角色列表</span></div>
-      <p class="helper">声音和说话方式都准备好后，才能同步给老人端。</p>
+      <p class="helper">先准备一段授权声音，再整理说话方式，最后同步给长辈选择。</p>
       <div id="roles" class="role-list"><div class="empty">加载中...</div></div>
     </section>
 
@@ -88,7 +88,7 @@
             </div>
 
             <div class="role-steps" aria-label="准备进度">
-              <span class="${voiceReady ? "done" : ""}">声音</span>
+              <span class="${voiceReady ? "done" : ""}">熟悉声音</span>
               <span class="${personaReady ? "done" : ""}">说话方式</span>
               <span class="${["synced", "active"].includes(role.sync_status) ? "done" : ""}">同步</span>
             </div>
@@ -96,8 +96,8 @@
             <div class="role-workflow">
               <form class="form role-panel voice-form">
                 <div class="panel-head">
-                  <span class="panel-title">1. 授权声音</span>
-                  <span class="panel-state">${voiceReady ? "已准备" : "待上传"}</span>
+                  <span class="panel-title">1. 准备熟悉声音</span>
+                  <span class="panel-state">${voiceReady ? "已准备好" : "待准备"}</span>
                 </div>
                 <div class="recorder" data-recorder>
                   <div class="record-actions">
@@ -108,7 +108,7 @@
                   <small data-record-state>也可以直接上传一段已经录好的音频。</small>
                 </div>
                 <label class="field">
-                  <span>上传音频</span>
+                  <span>上传授权音频</span>
                   <input name="audio" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.pcm,.webm,.flac,.mp4,audio/*" />
                   <small>支持常见音频格式，单个文件不超过 50MB；录音和上传任选一种。</small>
                 </label>
@@ -116,7 +116,7 @@
                   <input name="auth" type="checkbox" />
                   <span>我确认已获得该声音本人或合法代理人的授权，仅用于陪伴本家庭老人。</span>
                 </label>
-                <button class="btn primary block" type="submit">保存并生成克隆声音</button>
+                <button class="btn primary block" type="submit">保存并准备声音</button>
                 <button class="btn block" type="button" data-preview="${role.id}">试听一句</button>
               </form>
 
@@ -153,8 +153,9 @@
             <div class="role-footer">
               <button class="btn primary block" data-sync="${role.id}">同步给老人端</button>
               <div class="role-secondary-actions">
-                <button class="btn" data-refresh="${role.id}">刷新状态</button>
+                <button class="btn" data-refresh="${role.id}">看看准备好了没</button>
                 <button class="btn" data-activate-role="${role.id}">设为通话对象</button>
+                <button class="danger-btn" data-delete-voice="${role.id}">删除声音资料</button>
                 <button class="danger-btn" data-delete-role="${role.id}">删除</button>
               </div>
             </div>
@@ -185,6 +186,9 @@
       });
       box.querySelectorAll("button[data-activate-role]").forEach((button) => {
         button.addEventListener("click", () => activateRole(button.dataset.activateRole));
+      });
+      box.querySelectorAll("button[data-delete-voice]").forEach((button) => {
+        button.addEventListener("click", () => deleteVoiceData(button.dataset.deleteVoice));
       });
       box.querySelectorAll("button[data-delete-role]").forEach((button) => {
         button.addEventListener("click", () => deleteRole(button.dataset.deleteRole));
@@ -304,7 +308,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sample_id: saved.sample.id }),
         });
-        toast("已开始准备声音，稍后可刷新状态");
+        toast("已开始准备声音，稍后可回来看看");
         loadRoles();
       } catch (error) {
         toast(error.message || "声音生成失败");
@@ -347,12 +351,12 @@
     async function refreshVoice(id) {
       try {
         await fetchJson(parentApi(`${ELDER_ID}/characters/${id}/voice/status`));
-        toast("状态已刷新");
+        toast("已更新");
         loadRoles();
       } catch (error) {
         try {
           await fetchJson(parentApi(`${ELDER_ID}/characters/${id}/voice`));
-          toast("状态已刷新");
+          toast("已更新");
           loadRoles();
         } catch (fallbackError) {
           toast(fallbackError.message || "刷新失败");
@@ -404,6 +408,17 @@
       try {
         await fetchJson(parentApi(`${ELDER_ID}/characters/${id}`), { method: "DELETE" });
         toast("已删除");
+        loadRoles();
+      } catch (error) {
+        toast(error.message || "删除失败");
+      }
+    }
+
+    async function deleteVoiceData(id) {
+      if (!confirm("确定删除这位角色的声音资料吗？删除后需要重新准备声音。")) return;
+      try {
+        await fetchJson(parentApi(`${ELDER_ID}/characters/${id}/voice_data`), { method: "DELETE" });
+        toast("声音资料已删除");
         loadRoles();
       } catch (error) {
         toast(error.message || "删除失败");

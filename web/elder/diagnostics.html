@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>小暖 · 设备检查</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <style>
+    body { user-select: none; }
+    .head { margin-bottom: var(--sp-lg); }
+    .head h1 { font-size: var(--fs-h1); font-weight: var(--fw-heavy); }
+    .head p { margin-top: var(--sp-xs); color: var(--color-sub); font-size: var(--fs-body); line-height: 1.5; }
+    .check-card {
+      background: var(--color-card); border-radius: var(--radius-card); box-shadow: var(--shadow-soft);
+      padding: var(--sp-md); margin-bottom: var(--sp-md);
+    }
+    .check-card h2 { font-size: var(--fs-h2); line-height: 1.25; }
+    .check-card p { margin-top: var(--sp-xs); color: var(--color-sub); font-size: var(--fs-label); line-height: 1.5; }
+    .btn {
+      width: 100%; border: none; border-radius: 16px; padding: 14px; margin-top: var(--sp-md);
+      background: var(--color-ink); color: var(--color-card); font-size: var(--fs-body);
+      font-weight: var(--fw-heavy); font-family: inherit;
+    }
+    .btn.secondary { background: var(--color-tint); color: var(--color-ink); }
+    .result { margin-top: var(--sp-sm); font-size: var(--fs-label); color: var(--color-sub); line-height: 1.5; }
+    .ok { color: var(--color-success); }
+    .bad { color: var(--color-danger); }
+  </style>
+</head>
+<body>
+  <main class="screen">
+    <header class="head">
+      <h1>设备检查</h1>
+      <p>如果通话听不清、没声音或接不上，可以在这里先检查。</p>
+    </header>
+
+    <section class="check-card">
+      <h2>网络</h2>
+      <p>检查小暖能不能连到服务。</p>
+      <button class="btn" id="network-test">检查网络</button>
+      <div class="result" id="network-result"></div>
+    </section>
+
+    <section class="check-card">
+      <h2>麦克风</h2>
+      <p>检查浏览器有没有允许小暖听到你说话。</p>
+      <button class="btn" id="mic-test">检查麦克风</button>
+      <div class="result" id="mic-result"></div>
+    </section>
+
+    <section class="check-card">
+      <h2>扬声器</h2>
+      <p>播放一句测试声音，确认能不能听见。</p>
+      <button class="btn" id="speaker-test">播放测试声音</button>
+      <div class="result" id="speaker-result"></div>
+    </section>
+
+    <section class="check-card">
+      <h2>拨号</h2>
+      <p>确认手机能不能打开拨号。不会自动拨出。</p>
+      <a class="btn secondary" id="dial-test" href="tel:10086">打开拨号测试</a>
+      <div class="result">如果弹出拨号界面，说明手机拨号入口正常。</div>
+    </section>
+
+    <a class="btn secondary" href="./index.html">回到通话</a>
+  </main>
+
+  <script src="./config.js"></script>
+  <script>
+    const API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE || "").trim();
+    const FAMILY_TOKEN = (window.APP_CONFIG && window.APP_CONFIG.FAMILY_TOKEN || "").trim();
+    function withToken(url) {
+      let sessionToken = "";
+      try { sessionToken = localStorage.getItem("xiaonuan_session_token") || ""; } catch (_) {}
+      if (!FAMILY_TOKEN && !sessionToken) return url;
+      const join = url.includes("?") ? "&" : "?";
+      if (FAMILY_TOKEN) return `${url}${join}family_token=${encodeURIComponent(FAMILY_TOKEN)}`;
+      return `${url}${join}session_token=${encodeURIComponent(sessionToken)}`;
+    }
+    function setResult(id, text, ok) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.className = `result ${ok ? "ok" : "bad"}`;
+    }
+    document.getElementById("network-test").addEventListener("click", async () => {
+      const start = performance.now();
+      try {
+        const response = await fetch(withToken(`${API_BASE}/healthz`), { cache: "no-store" });
+        if (!response.ok) throw new Error("bad_status");
+        const ms = Math.round(performance.now() - start);
+        setResult("network-result", `网络正常，响应约 ${ms}ms。`, true);
+      } catch (_) {
+        setResult("network-result", "网络没连上，请换个网络或稍后再试。", false);
+      }
+    });
+    document.getElementById("mic-test").addEventListener("click", async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+        setResult("mic-result", "麦克风正常。", true);
+      } catch (_) {
+        setResult("mic-result", "麦克风没有打开。请在浏览器权限里允许麦克风。", false);
+      }
+    });
+    document.getElementById("speaker-test").addEventListener("click", () => {
+      if (!window.speechSynthesis) {
+        setResult("speaker-result", "当前浏览器不支持测试朗读。", false);
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance("小暖声音测试。听得见吗？");
+      utterance.lang = "zh-CN";
+      window.speechSynthesis.speak(utterance);
+      setResult("speaker-result", "已播放测试声音。", true);
+    });
+  </script>
+</body>
+</html>

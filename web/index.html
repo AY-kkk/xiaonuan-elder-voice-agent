@@ -108,10 +108,32 @@
 
   <script src="./shared/splash.js"></script>
   <script>
+    async function login(role) {
+      try {
+        const apiRole = role === "family" ? "parent" : "elder";
+        const name = role === "family" ? "家人" : "长辈";
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name: name,
+            role: apiRole,
+            elder_id: "elder-001",
+            family_id: "family-default",
+          }),
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        localStorage.setItem("xiaonuan_session_token", data.token);
+        localStorage.setItem("xiaonuan_account_role", apiRole);
+      } catch (_) {}
+    }
+
     document.querySelectorAll(".choice").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const role = button.classList.contains("elder") ? "elder" : "family";
         try { localStorage.setItem("xiaonuan_role", role); } catch (_) {}
+        await login(role);
         const target = button.dataset.target;
         if (location.protocol === "file:") {
           location.href = `http://127.0.0.1:8010/${target.replace(/^\.\//, "")}`;

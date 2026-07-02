@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from dataclasses import dataclass
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -16,6 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
+from .auth import FamilyAuthMiddleware
+from .account import AccountStore
 from .config import AppConfig, load_config
 from .engine.factory import create_engine
 from .jobs import BackgroundJobService
@@ -23,11 +26,14 @@ from .memory import MemoryService, MemoryStore
 from .signals import SignalService
 from .usage import UsageStore
 from .character import CharacterService, CharacterStore
+from .care import CareStore, ElderCareService
 from .voice import VoiceService, VoiceStore
+from .api import auth as auth_api
 from .api import parent as parent_api
 from .api import elder as elder_api
 from .api import character as character_api
 from .session.manager import ConversationSession
+from .session.store import SessionEventStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("gateway")
@@ -36,14 +42,18 @@ logger = logging.getLogger("gateway")
 @dataclass
 class AppContainer:
     cfg: AppConfig
+    account_store: AccountStore
     usage_store: UsageStore
     memory_store: MemoryStore
+    care_store: CareStore
     memory: MemoryService
+    care: ElderCareService
     signals: SignalService
     character_store: CharacterStore
     character: CharacterService
     voice_store: VoiceStore
     voice: VoiceService
+    session_events: SessionEventStore
     jobs: BackgroundJobService
 
 
@@ -54,31 +64,41 @@ def build_container(config: AppConfig | None = None) -> AppContainer:
     集中创建，测试或后续拆分部署时可以替换 config 后复用同一装配路径。
     """
     c = config or load_config()
+    account_store = AccountStore(c.db_path)
     usage_store = UsageStore(c.db_path)
     memory_store = MemoryStore(c.db_path)
+    care_store = CareStore(c.db_path)
     memory = MemoryService(memory_store, c.ark, usage_store=usage_store)
+    care = ElderCareService(memory_store, care_store)
     signals = SignalService(c.db_path, c.ark, usage_store=usage_store)
     character_store = CharacterStore(c.db_path)
     character = CharacterService(character_store, c.volc, c.ark, usage_store=usage_store)
     voice_store = VoiceStore(c.db_path)
     voice = VoiceService(voice_store, character_store)
+    session_events = SessionEventStore(c.db_path)
     jobs = BackgroundJobService(c.db_path)
     return AppContainer(
         cfg=c,
+        account_store=account_store,
         usage_store=usage_store,
         memory_store=memory_store,
+        care_store=care_store,
         memory=memory,
+        care=care,
         signals=signals,
         character_store=character_store,
         character=character,
         voice_store=voice_store,
         voice=voice,
+        session_events=session_events,
         jobs=jobs,
     )
 
 
 cfg = load_config()
 app = FastAPI(title="老年陪伴语音 Agent 后端")
+_container = build_container(cfg)
+_account_store = _container.account_store
 
 # 前后端分离部署时放行跨域（CORS_ALLOW_ORIGINS 配置；留空=同源托管，不挂中间件最安全）
 if cfg.cors_origins:
@@ -90,19 +110,30 @@ if cfg.cors_origins:
         allow_headers=["*"],
     )
 
-_container = build_container(cfg)
+app.add_middleware(
+    FamilyAuthMiddleware,
+    required=cfg.auth_required,
+    token=cfg.family_api_token,
+    account_store=_account_store,
+)
+
 _usage_store = _container.usage_store
 _memory_store = _container.memory_store
+_care_store = _container.care_store
 _memory = _container.memory
+_care = _container.care
 _signals = _container.signals
 _character_store = _container.character_store
 _character = _container.character
 _voice_store = _container.voice_store
 _voice = _container.voice
+_session_events = _container.session_events
 _jobs = _container.jobs
-parent_api.bind(_memory_store, _signals, _usage_store, cfg.ark_price_per_mtoken, _character, _voice)
-elder_api.bind(_memory_store, _character)
+auth_api.bind(_account_store)
+parent_api.bind(_memory_store, _signals, _usage_store, cfg.ark_price_per_mtoken, _character, _voice, _care)
+elder_api.bind(_memory_store, _character, _care)
 character_api.bind(_character)
+app.include_router(auth_api.router)
 app.include_router(parent_api.router)
 app.include_router(elder_api.router)
 app.include_router(character_api.router)
@@ -118,11 +149,14 @@ def _probe_volc_ready() -> bool:
 
 @app.on_event("startup")
 async def _init_db() -> None:
+    await _account_store.ensure_schema()
     await _memory_store.ensure_schema()
+    await _care_store.ensure_schema()
     await _signals.ensure_schema()
     await _usage_store.ensure_schema()
     await _character_store.ensure_schema()
     await _voice_store.ensure_schema()
+    await _session_events.ensure_schema()
     await _jobs.ensure_schema()
 
 
@@ -175,8 +209,21 @@ def _speaker_provider_for(elder_id: str):
 
 @app.websocket("/ws/elder/{elder_id}")
 async def elder_ws(ws: WebSocket, elder_id: str) -> None:
+    if cfg.auth_required:
+        family_token = ws.query_params.get("family_token")
+        session_token = ws.query_params.get("session_token")
+        allowed = family_token == cfg.family_api_token or await _account_store.allowed(
+            session_token or "", elder_id=elder_id, required_role="elder"
+        )
+        if not allowed:
+            await ws.close(code=1008)
+            return
     await ws.accept()
-    logger.info("适老端接入 elder_id=%s", elder_id)
+    session_id = uuid.uuid4().hex
+    audio_frames = 0
+    audio_bytes = 0
+    await _session_events.log(elder_id, session_id, "ws_accepted")
+    logger.info("适老端接入 elder_id=%s session_id=%s", elder_id, session_id)
 
     async def client_send(msg: bytes | str) -> None:
         if isinstance(msg, bytes):
@@ -196,8 +243,10 @@ async def elder_ws(ws: WebSocket, elder_id: str) -> None:
 
     try:
         await session.start()
+        await _session_events.log(elder_id, session_id, "session_started")
     except Exception as exc:  # 建连失败：友好提示后关闭
         logger.exception("会话启动失败")
+        await _session_events.log(elder_id, session_id, "session_start_failed", detail=str(exc))
         await client_send('{"type":"status","status":"error","detail":"connect_failed"}')
         await ws.close()
         return
@@ -209,11 +258,20 @@ async def elder_ws(ws: WebSocket, elder_id: str) -> None:
             if message["type"] == "websocket.disconnect":
                 break
             if (data := message.get("bytes")) is not None:
+                audio_frames += 1
+                audio_bytes += len(data)
                 await session.push_audio(data)
             elif (text := message.get("text")) is not None:
                 await session.handle_client_text(text)
     except WebSocketDisconnect:
         logger.info("适老端断开 elder_id=%s", elder_id)
+        await _session_events.log(
+            elder_id,
+            session_id,
+            "websocket_disconnected",
+            audio_frames=audio_frames,
+            audio_bytes=audio_bytes,
+        )
     finally:
         await session.stop()
         recv_task.cancel()
@@ -223,6 +281,13 @@ async def elder_ws(ws: WebSocket, elder_id: str) -> None:
             pass
         except Exception:
             logger.debug("接收任务已随 WebSocket 断开结束", exc_info=True)
+        await _session_events.log(
+            elder_id,
+            session_id,
+            "session_closed",
+            audio_frames=audio_frames,
+            audio_bytes=audio_bytes,
+        )
 
 
 @app.get("/healthz")
@@ -244,6 +309,8 @@ async def healthz() -> dict:
         "ark_enabled": cfg.ark.enabled,
         "model": cfg.volc.model_version,
         "speaker": cfg.volc.speaker,
+        "auth_required": cfg.auth_required,
+        "session_events_enabled": True,
         "background_job_failures_24h": background_job_failures_24h,
         "last_background_job_failure": await _jobs.last_failure(),
     }

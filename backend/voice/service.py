@@ -1,7 +1,6 @@
 """Application service for authorized voice samples and clone profiles."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional
 
 from ..character import CharacterStore
@@ -63,8 +62,7 @@ class VoiceService:
             raise ValueError("请先录音或上传一段授权音频")
         if not sample.get("consent"):
             raise ValueError("该声音样本缺少授权确认")
-        audio_path = Path(sample["storage_path"])
-        audio_bytes = audio_path.read_bytes()
+        audio_bytes = self._store.read_sample_bytes(sample)
         result = await self._provider.clone(
             elder_id=elder_id,
             character_id=character_id,
@@ -115,6 +113,8 @@ class VoiceService:
                 speaker_id=result.provider_voice_id,
                 status=result.status,
             )
+        if result.status == "ready":
+            await self._store.delete_samples(elder_id, character_id)
         character = await self._character_store.get(elder_id, character_id)
         return {"profile": _public_profile(profile), "character": character or char}
 
@@ -124,6 +124,22 @@ class VoiceService:
         if not profile or profile["status"] != "ready":
             raise ValueError("声音还没准备好，请稍后刷新状态")
         return await self._provider.preview(profile["provider_voice_id"], text)
+
+    async def delete_voice_data(self, elder_id: str, character_id: int) -> dict:
+        await self._require_character(elder_id, character_id)
+        files_deleted = await self._store.delete_samples(elder_id, character_id)
+        await self._store.delete_profiles(elder_id, character_id)
+        await self._character_store.update_voice(
+            elder_id,
+            character_id,
+            speaker_id="",
+            status="none",
+        )
+        character = await self._character_store.get(elder_id, character_id)
+        return {"files_deleted": files_deleted, "character": character}
+
+    async def cleanup_expired_samples(self) -> dict:
+        return {"files_deleted": await self._store.cleanup_expired_samples()}
 
     async def _require_character(self, elder_id: str, character_id: int) -> dict:
         char = await self._character_store.get(elder_id, character_id)
