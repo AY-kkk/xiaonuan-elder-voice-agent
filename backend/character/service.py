@@ -15,7 +15,7 @@ import logging
 from typing import Optional
 
 from ..config import ArkConfig, VolcConfig
-from .persona import PersonaService
+from .persona import PersonaService, format_dialogue_log
 from .store import CharacterStore
 from .voice_clone import VoiceCloneClient
 
@@ -159,6 +159,60 @@ class CharacterService:
         await self._store.update_persona(elder_id, char_id, prompt=prompt, status="ready")
         return await self._store.get(elder_id, char_id)
 
+    async def refine_persona_from_log(
+        self, elder_id: str, char_id: int, dialogue_log: str
+    ) -> dict:
+        """用角色与老人的历史对话日志增强人格真实感（日志用完即弃）。"""
+        char = await self._store.get(elder_id, char_id)
+        if char is None:
+            raise ValueError("角色不存在")
+        prompt = await self._persona.refine_from_dialogue(
+            elder_id,
+            char["name"],
+            char["relation"],
+            char["persona_prompt"],
+            dialogue_log,
+        )
+        refined = _has_dialogue_refinement(prompt)
+        refined_applied = refined and prompt != char["persona_prompt"]
+        await self._store.update_persona(
+            elder_id, char_id, prompt=prompt, status="ready", refined=refined
+        )
+        snapshot = await self._store.get(elder_id, char_id)
+        snapshot["persona_refine_applied"] = refined_applied
+        return snapshot
+
+    async def refine_active_persona_from_dialogue(
+        self, elder_id: str, transcript: list
+    ) -> Optional[dict]:
+        """会话结束后，用当前启用角色的真实互动日志反哺人格。
+
+        未启用角色或角色人格未就绪时跳过，避免把默认助手的说话方式误蒸馏到角色上。
+        """
+        if not transcript:
+            return None
+        char = await self._store.get_active(elder_id)
+        if not char or char["persona_status"] != "ready" or not char["persona_prompt"]:
+            return None
+        dialogue = format_dialogue_log(transcript, assistant_name=char["name"])
+        prompt = await self._persona.refine_from_dialogue(
+            elder_id,
+            char["name"],
+            char["relation"],
+            char["persona_prompt"],
+            dialogue,
+        )
+        if prompt == char["persona_prompt"]:
+            return char
+        await self._store.update_persona(
+            elder_id,
+            char["id"],
+            prompt=prompt,
+            status="ready",
+            refined=_has_dialogue_refinement(prompt),
+        )
+        return await self._store.get(elder_id, char["id"])
+
     # ---- 激活与会话注入 ----
     async def activate(self, elder_id: str, char_id: int) -> bool:
         return await self._store.set_active(elder_id, char_id)
@@ -185,3 +239,7 @@ def _elder_copy(role: dict) -> str:
     if role["voice_status"] == "ready" and role["persona_status"] == "ready":
         return f"{role['name']}的声音已经准备好了"
     return f"家人正在准备{role['name']}的声音，准备好后会告诉你"
+
+
+def _has_dialogue_refinement(prompt: str) -> bool:
+    return "【真实互动日志蒸馏" in (prompt or "")

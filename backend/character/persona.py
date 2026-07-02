@@ -15,13 +15,12 @@
 """
 from __future__ import annotations
 
-import json
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from ..ark.text_client import ArkTextClient
 from ..config import ArkConfig
-from .persona_skill import PERSONA_DISTILL_SKILL
+from .persona_skill import PERSONA_DISTILL_SKILL, ROLE_DIALOGUE_LOG_DISTILL_SKILL
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +42,21 @@ _DISTILL_SYSTEM = (
 
 # 注入发声链路的人格段落框架（拼在基础陪伴人设之后）。
 _PERSONA_HEADER = "【陪伴角色画像：请用这个人的说话方式陪老人聊天】"
+_DIALOGUE_HEADER = "【真实互动日志蒸馏：请按老人更能接受的方式回应】"
+
+_LOG_DISTILL_SYSTEM = (
+    "你是老人语音陪伴场景的角色互动蒸馏专家。请阅读某个角色与老人的对话日志，"
+    "只提炼能让下一次陪伴更自然、更像熟人的互动规律。只输出 JSON，不要解释。格式：\n"
+    '{"relationship_dynamics": ["角色与老人之间稳定的互动节奏，每条一句话"], '
+    '"elder_response_preferences": ["老人更容易接受的说法、节奏或话题进入方式"], '
+    '"effective_moves": ["角色已经有效的安抚、转场、提醒、逗趣或收束方式"], '
+    '"repair_moves": ["当老人不耐烦、沉默、误解或拒绝时应怎样修复"], '
+    '"new_boundaries": ["从日志中归纳出的新边界或少碰的话题"], '
+    '"phrase_patterns": ["可复用的句式模式，不能输出原文"]}\n'
+    "要求：不要输出原始对话句子；不要保存具体疾病、地址、钱款、家庭矛盾等隐私事实；"
+    "不要把单次情绪当成长期人格；只保留可指导角色下一轮更真实陪伴的策略。\n"
+    f"{ROLE_DIALOGUE_LOG_DISTILL_SKILL}"
+)
 
 
 class PersonaService:
@@ -93,9 +107,54 @@ class PersonaService:
             logger.exception("人格蒸馏调用失败，降级为模板")
             traits = None
 
-        return _render_prompt(name, relation, traits) if traits else _template_prompt(
+        safe_traits = _redact_source_echoes(traits, corpus) if traits else None
+        return _render_prompt(name, relation, safe_traits) if safe_traits else _template_prompt(
             name, relation, traits=None
         )
+
+    async def refine_from_dialogue(
+        self,
+        elder_id: str,
+        name: str,
+        relation: str,
+        current_prompt: str,
+        dialogue: str,
+    ) -> str:
+        """用角色与老人的对话日志反哺人格 prompt。
+
+        只把日志蒸馏成互动策略，不保存原始日志；方舟不可用或结果无效时保持原 prompt。
+        """
+        dialogue = (dialogue or "").strip()
+        base_prompt = (current_prompt or "").strip() or _template_prompt(
+            name, relation, traits=None
+        )
+        if not dialogue:
+            return base_prompt
+        if not self._ark_cfg.enabled:
+            logger.info("方舟未配置，跳过角色真实互动日志蒸馏")
+            return base_prompt
+
+        try:
+            user_content = (
+                "现有角色画像（用于合并更新，不要复述）：\n"
+                f"{_truncate(base_prompt, limit=4000)}\n\n"
+                "新对话日志（只抽象互动策略，不保存原文）：\n"
+                f"{_truncate(dialogue, limit=6000)}"
+            )
+            traits = await self._client_for(elder_id).chat_json(
+                [
+                    {"role": "system", "content": _LOG_DISTILL_SYSTEM},
+                    {"role": "user", "content": user_content},
+                ]
+            )
+        except Exception:
+            logger.exception("角色真实互动日志蒸馏失败，保持现有人格")
+            return base_prompt
+
+        safe_traits = _redact_source_echoes(traits, dialogue) if traits else None
+        if not _has_dialogue_traits(safe_traits):
+            return base_prompt
+        return _render_dialogue_refinement(base_prompt, name, relation, safe_traits or {})
 
 
 def _render_prompt(name: str, relation: str, traits: dict) -> str:
@@ -130,6 +189,39 @@ def _render_prompt(name: str, relation: str, traits: dict) -> str:
     return "\n".join(lines)
 
 
+def _render_dialogue_refinement(
+    current_prompt: str, name: str, relation: str, traits: dict
+) -> str:
+    """把真实互动日志蒸馏结果追加到人格提示词末尾；重复蒸馏时替换旧日志块。"""
+    base = _strip_dialogue_refinement(current_prompt)
+    who = f"{name}" + (f"（{relation}）" if relation else "")
+    lines = [_DIALOGUE_HEADER, f"- 角色：{who}"]
+    list_fields = [
+        ("relationship_dynamics", "关系节奏"),
+        ("elder_response_preferences", "老人更接受"),
+        ("effective_moves", "有效陪伴动作"),
+        ("repair_moves", "卡住时修复"),
+        ("new_boundaries", "新增边界"),
+        ("phrase_patterns", "真实句式模式"),
+    ]
+    for key, label in list_fields:
+        values = _as_str_list(traits.get(key))
+        if values:
+            lines.append(f"- {label}：" + "；".join(values[:5]))
+    lines.append(
+        "使用规则：这些是互动策略，不是事实记忆；只在自然相关时使用，"
+        "不要让老人感觉被记录或被分析。"
+    )
+    return f"{base}\n\n" + "\n".join(lines)
+
+
+def _strip_dialogue_refinement(prompt: str) -> str:
+    prompt = (prompt or "").strip()
+    if _DIALOGUE_HEADER not in prompt:
+        return prompt
+    return prompt.split(_DIALOGUE_HEADER, 1)[0].rstrip()
+
+
 def _template_prompt(name: str, relation: str, traits: Optional[dict]) -> str:
     """无语料/无方舟时的兜底：仅凭名字与关系给出基础角色设定。"""
     who = f"{name}" + (f"（{relation}）" if relation else "")
@@ -147,3 +239,72 @@ def _template_prompt(name: str, relation: str, traits: Optional[dict]) -> str:
 def _truncate(text: str, limit: int = 4000) -> str:
     """语料过长时截断，控制单次蒸馏成本（人格特征不需要全量语料）。"""
     return text if len(text) <= limit else text[:limit]
+
+
+def format_dialogue_log(transcript: List[dict], *, assistant_name: str = "角色") -> str:
+    role_cn = {"user": "老人", "assistant": assistant_name}
+    lines = [
+        f"{role_cn.get(t.get('role'), t.get('role', ''))}：{t.get('text', '')}"
+        for t in transcript
+        if t.get("text")
+    ]
+    return "\n".join(lines)
+
+
+def _as_str_list(value) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _has_dialogue_traits(value) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return any(
+        _as_str_list(value.get(key))
+        for key in (
+            "relationship_dynamics",
+            "elder_response_preferences",
+            "effective_moves",
+            "repair_moves",
+            "new_boundaries",
+            "phrase_patterns",
+        )
+    )
+
+
+def _redact_source_echoes(traits: dict, source: str) -> dict:
+    """删除疑似复述上传原文的字段，给 prompt 约束之外再加一道确定性护栏。"""
+    if not isinstance(traits, dict):
+        return {}
+    source_text = (source or "").strip()
+    source_lines = [
+        line.strip()
+        for line in source_text.splitlines()
+        if len(line.strip()) >= 8
+    ]
+    cleaned: dict = {}
+    for key, value in traits.items():
+        if isinstance(value, list):
+            items = [
+                str(item).strip()
+                for item in value
+                if str(item).strip() and not _looks_like_source_echo(str(item), source_text, source_lines)
+            ]
+            if items:
+                cleaned[key] = items
+        else:
+            text = str(value).strip()
+            if text and not _looks_like_source_echo(text, source_text, source_lines):
+                cleaned[key] = text
+    return cleaned
+
+
+def _looks_like_source_echo(value: str, source_text: str, source_lines: List[str]) -> bool:
+    text = " ".join((value or "").split())
+    if len(text) < 8:
+        return False
+    compact_source = " ".join(source_text.split())
+    if text in compact_source:
+        return True
+    return any(line in text or text in line for line in source_lines)

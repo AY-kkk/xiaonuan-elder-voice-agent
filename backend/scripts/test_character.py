@@ -20,7 +20,7 @@ from pathlib import Path
 from ..config import ArkConfig, VolcConfig
 from ..character import CharacterService, CharacterStore
 from ..character.chat_parser import parse_chat_record
-from ..character.persona import _render_prompt
+from ..character.persona import _redact_source_echoes, _render_dialogue_refinement, _render_prompt
 
 ELDER = "elder-char-test"
 OTHER = "elder-other"
@@ -120,6 +120,89 @@ async def _test_chat_record_parser() -> None:
     )
     _check("人格渲染不落 sample 原句", "爸你别着急" not in rendered and "句式模式" in rendered)
 
+    refined = _render_dialogue_refinement(
+        rendered,
+        "女儿",
+        "女儿",
+        {
+            "elder_response_preferences": ["先顺着老人情绪，再用商量语气提醒"],
+            "effective_moves": ["把提醒拆成一步一步的小动作"],
+            "phrase_patterns": ["称呼开头 + 轻声建议 + 给老人选择"],
+        },
+    )
+    _check("日志蒸馏渲染为互动策略", "真实互动日志蒸馏" in refined and "老人更接受" in refined)
+    _check("日志蒸馏不包含原始对话", "爸你别着急" not in refined)
+    safe = _redact_source_echoes(
+        {
+            "effective_moves": ["女儿：爸你别着急，记得按时吃饭", "先安抚，再商量式提醒"],
+            "elder_response_preferences": ["老人接受短句"],
+        },
+        "女儿：爸你别着急，记得按时吃饭\n爸爸：好",
+    )
+    _check("蒸馏输出原文硬过滤", "爸你别着急" not in str(safe) and "先安抚" in str(safe))
+
+
+class _FakePersona:
+    async def distill(self, elder_id: str, name: str, relation: str, corpus: str) -> str:
+        return _render_prompt(
+            name,
+            relation,
+            {
+                "identity": relation or name,
+                "speech_style": "短句、先安抚再提醒",
+                "phrase_patterns": ["称呼开头 + 商量式提醒"],
+            },
+        )
+
+    async def refine_from_dialogue(
+        self,
+        elder_id: str,
+        name: str,
+        relation: str,
+        current_prompt: str,
+        dialogue: str,
+    ) -> str:
+        return _render_dialogue_refinement(
+            current_prompt,
+            name,
+            relation,
+            {
+                "elder_response_preferences": ["老人接受先共情、再给选择的说法"],
+                "effective_moves": ["把提醒变成陪老人一起做的小步骤"],
+                "repair_moves": ["老人不耐烦时先停一下，再换轻松话题"],
+            },
+        )
+
+
+async def _test_dialogue_log_refinement() -> None:
+    db = _fresh_db("log_refine")
+    store, svc = _service(db)
+    await store.ensure_schema()
+    svc._persona = _FakePersona()
+    c = await svc.create(ELDER, "女儿", "女儿")
+    await svc.distill_persona(ELDER, c["id"], CORPUS)
+
+    snap = await svc.refine_persona_from_log(
+        ELDER,
+        c["id"],
+        "老人：我不想吃饭\n女儿：爸，咱少吃两口也行，我陪您慢慢来",
+    )
+    _check("手动日志增强后人格仍就绪", snap["persona_status"] == "ready")
+    _check("手动日志增强推进版本", snap["persona_revision"] >= 2, str(snap["persona_revision"]))
+    _check("手动日志增强记录时间", bool(snap["persona_refined_at"]))
+    _check("手动日志原文不落库", "我不想吃饭" not in snap["persona_prompt"])
+    _check("手动日志策略进入 prompt", "老人接受先共情" in snap["persona_prompt"])
+
+    await svc.activate(ELDER, c["id"])
+    snap2 = await svc.refine_active_persona_from_dialogue(
+        ELDER,
+        [
+            {"role": "user", "text": "我今天有点烦。"},
+            {"role": "assistant", "text": "爸，我陪您坐一会儿，咱不急。"},
+        ],
+    )
+    _check("启用角色会话日志可自动反哺", bool(snap2 and snap2["persona_refined_at"]))
+
 
 async def _test_activation_and_injection() -> None:
     db = _fresh_db("active")
@@ -172,6 +255,7 @@ async def main() -> None:
     await _test_voice_mock()
     await _test_persona_template()
     await _test_chat_record_parser()
+    await _test_dialogue_log_refinement()
     await _test_activation_and_injection()
     print("\n角色再生（声音克隆 + 人格蒸馏）自测全部通过 ✅")
 

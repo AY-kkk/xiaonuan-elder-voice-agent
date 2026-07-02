@@ -497,6 +497,41 @@ async def parent_distill_persona_upload(
     return {"ok": True, "character": char}
 
 
+@router.post("/{elder_id}/characters/{cid}/persona_logs")
+async def parent_refine_persona_logs(
+    elder_id: str,
+    cid: int,
+    dialogue_log: str = Form("", max_length=12000),
+    chat_record: Optional[UploadFile] = File(None),
+) -> dict:
+    parts = [dialogue_log.strip() if dialogue_log.strip() else ""]
+    if chat_record is not None and chat_record.filename:
+        data = await chat_record.read()
+        if len(data) > _MAX_CHAT_RECORD_BYTES:
+            raise HTTPException(status_code=400, detail="对话日志超过 20MB 上限")
+        try:
+            parsed = parse_chat_record(chat_record.filename, data)
+        except ChatParseError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        parts.append(parsed)
+    corpus = "\n".join(p for p in parts if p).strip()
+    if not corpus:
+        raise HTTPException(
+            status_code=400,
+            detail="请粘贴角色与老人的对话日志，或上传日志文件。支持："
+            + "、".join(sorted(SUPPORTED_CHAT_EXTENSIONS)),
+        )
+    try:
+        char = await _require_character().refine_persona_from_log(elder_id, cid, corpus)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {
+        "ok": True,
+        "refined": bool(char.get("persona_refine_applied")),
+        "character": char,
+    }
+
+
 @router.post("/{elder_id}/characters/{cid}/sync")
 async def parent_sync_character(elder_id: str, cid: int) -> dict:
     ok = await _require_character().sync_to_elder(elder_id, cid)

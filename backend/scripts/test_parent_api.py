@@ -124,6 +124,12 @@ async def main() -> None:
                 json={"corpus": "爸，今天慢慢来，别着急，记得吃饭。"},
             )
             assert r.status_code == 200, r.text
+            r = await client.post(
+                f"/api/parent/{elder}/characters/{cid}/persona_logs",
+                data={"dialogue_log": "老人：我不想吃饭\n女儿小芳：爸，咱少吃两口也行，我陪您慢慢来。"},
+            )
+            assert r.status_code == 200, r.text
+            assert "我不想吃饭" not in r.text, "角色日志原文不应落库或回传"
             r = await client.post(f"/api/parent/{elder}/characters/{cid}/sync")
             assert r.status_code == 200, r.text
             r = await client.get(f"/api/elder/{elder}/companions")

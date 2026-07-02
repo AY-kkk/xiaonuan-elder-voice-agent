@@ -51,7 +51,7 @@ PORT="$(grep -E '^PORT=' .env | head -1 | cut -d= -f2 | tr -d '[:space:]')"
 PORT="${PORT:-8000}"
 
 echo ""
-echo "🚀 启动中（引擎：$ENGINE）…"
+echo "🚀 启动中（引擎：${ENGINE}）…"
 echo "   老人端：http://127.0.0.1:${PORT}/elder/"
 echo "   子女端：http://127.0.0.1:${PORT}/parent/"
 echo "   健康检查：http://127.0.0.1:${PORT}/healthz"

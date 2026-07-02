@@ -148,6 +148,24 @@
                 </label>
                 <button class="btn primary block" type="submit">生成说话方式</button>
               </form>
+
+              <form class="form role-panel log-form">
+                <div class="panel-head">
+                  <span class="panel-title">3. 增强真实互动</span>
+                  <span class="panel-state">${role.persona_refined_at ? "已增强" : "可选"}</span>
+                </div>
+                <label class="field">
+                  <span>角色与长辈对话</span>
+                  <textarea name="dialogue_log" placeholder="如：老人：今天不想吃饭&#10;女儿：爸，咱少吃两口也行，我陪您慢慢来"></textarea>
+                  <small>用于学习关系节奏和老人更接受的说法，不保存原文。</small>
+                </label>
+                <label class="field">
+                  <span>对话日志文件</span>
+                  <input name="chat_record" type="file" accept=".txt,.md,.markdown,.json,.csv,.html,.htm,.docx,.xlsx,.pdf" />
+                  <small>适合上传角色与长辈的历史对话节选；会抽象成互动策略。</small>
+                </label>
+                <button class="btn primary block" type="submit">增强真实感</button>
+              </form>
             </div>
 
             <div class="role-footer">
@@ -174,6 +192,9 @@
       });
       box.querySelectorAll(".persona-form").forEach((form) => {
         form.addEventListener("submit", generatePersona);
+      });
+      box.querySelectorAll(".log-form").forEach((form) => {
+        form.addEventListener("submit", refinePersonaLogs);
       });
       box.querySelectorAll("button[data-refresh]").forEach((button) => {
         button.addEventListener("click", () => refreshVoice(button.dataset.refresh));
@@ -345,6 +366,31 @@
         loadRoles();
       } catch (error) {
         toast(error.message || "生成失败");
+      }
+    }
+
+    async function refinePersonaLogs(event) {
+      event.preventDefault();
+      const card = event.target.closest(".role");
+      const form = event.target;
+      const dialogueLog = form.elements.dialogue_log.value.trim();
+      const chatRecord = form.elements.chat_record.files[0];
+      if (!dialogueLog && !chatRecord) {
+        toast("请粘贴对话日志或上传文件");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("dialogue_log", dialogueLog);
+      if (chatRecord) formData.append("chat_record", chatRecord);
+      try {
+        const result = await fetchJson(parentApi(`${ELDER_ID}/characters/${card.dataset.id}/persona_logs`), {
+          method: "POST",
+          body: formData,
+        });
+        toast(result.refined ? "真实互动已增强" : "暂未提炼出新的互动策略");
+        loadRoles();
+      } catch (error) {
+        toast(error.message || "增强失败");
       }
     }
 

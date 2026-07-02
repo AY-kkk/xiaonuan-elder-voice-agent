@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS characters (
     display_order   INTEGER NOT NULL DEFAULT 0,
     elder_alias     TEXT NOT NULL DEFAULT '',
     avoid_phrases   TEXT NOT NULL DEFAULT '[]',
+    persona_revision INTEGER NOT NULL DEFAULT 0,
+    persona_refined_at REAL,
     created_at      REAL NOT NULL,
     updated_at      REAL NOT NULL,
     UNIQUE(elder_id, name)
@@ -50,7 +52,8 @@ CREATE INDEX IF NOT EXISTS idx_char_elder_sync ON characters(elder_id, sync_stat
 _COLUMNS = (
     "id, elder_id, name, relation, speaker_id, voice_status, "
     "persona_prompt, persona_status, is_active, created_by, sync_status, synced_at, "
-    "elder_notice_seen_at, display_order, elder_alias, avoid_phrases, created_at, updated_at"
+    "elder_notice_seen_at, display_order, elder_alias, avoid_phrases, persona_revision, "
+    "persona_refined_at, created_at, updated_at"
 )
 
 
@@ -76,6 +79,8 @@ class CharacterStore:
             "display_order": "ALTER TABLE characters ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0",
             "elder_alias": "ALTER TABLE characters ADD COLUMN elder_alias TEXT NOT NULL DEFAULT ''",
             "avoid_phrases": "ALTER TABLE characters ADD COLUMN avoid_phrases TEXT NOT NULL DEFAULT '[]'",
+            "persona_revision": "ALTER TABLE characters ADD COLUMN persona_revision INTEGER NOT NULL DEFAULT 0",
+            "persona_refined_at": "ALTER TABLE characters ADD COLUMN persona_refined_at REAL",
         }
         for name, sql in additions.items():
             if name not in cols:
@@ -181,14 +186,25 @@ class CharacterStore:
             await db.commit()
         await self._refresh_readiness(elder_id, char_id)
 
-    async def update_persona(self, elder_id: str, char_id: int, *, prompt: str, status: str) -> None:
+    async def update_persona(
+        self,
+        elder_id: str,
+        char_id: int,
+        *,
+        prompt: str,
+        status: str,
+        refined: bool = False,
+    ) -> None:
         if status not in PERSONA_STATUSES:
             raise ValueError(f"非法人格状态：{status}")
+        refined_at = time.time() if refined else None
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(
-                "UPDATE characters SET persona_prompt=?, persona_status=?, updated_at=? "
+                "UPDATE characters SET persona_prompt=?, persona_status=?, "
+                "persona_revision=COALESCE(persona_revision, 0)+1, "
+                "persona_refined_at=COALESCE(?, persona_refined_at), updated_at=? "
                 "WHERE elder_id=? AND id=?",
-                (prompt, status, time.time(), elder_id, char_id),
+                (prompt, status, refined_at, time.time(), elder_id, char_id),
             )
             await db.commit()
         await self._refresh_readiness(elder_id, char_id)

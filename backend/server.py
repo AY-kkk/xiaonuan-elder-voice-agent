@@ -182,6 +182,11 @@ def _on_session_end(elder_id: str, session_id: str):
     async def _handler(transcript: list) -> None:
         _jobs.submit(elder_id, "memory_distill", lambda: _memory.distill(elder_id, transcript))
         _jobs.submit(elder_id, "signal_generate", lambda: _signals.generate(elder_id, transcript))
+        _jobs.submit(
+            elder_id,
+            "character_persona_refine",
+            lambda: _character.refine_active_persona_from_dialogue(elder_id, transcript),
+        )
         if _trajectory_exporter.enabled:
             _jobs.submit(
                 elder_id,
