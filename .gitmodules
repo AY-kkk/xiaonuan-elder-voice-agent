@@ -1,0 +1,3 @@
+[submodule "third_party/voicebench"]
+	path = third_party/voicebench
+	url = https://github.com/MatthewCYM/VoiceBench.git

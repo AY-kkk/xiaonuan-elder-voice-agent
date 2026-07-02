@@ -28,3 +28,8 @@ xcuserdata/
 
 # ---- 设计素材（参考图，不进代码仓库）----
 前端设计素材/
+
+# ---- 离线评测 / 蒸馏轨迹产物（默认不入库）----
+artifacts/
+eval_outputs/
+distillation_exports/
