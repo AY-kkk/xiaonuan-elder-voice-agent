@@ -27,6 +27,7 @@ from .signals import SignalService
 from .usage import UsageStore
 from .character import CharacterService, CharacterStore
 from .care import CareStore, ElderCareService
+from .distillation import TrajectoryExporter
 from .voice import VoiceService, VoiceStore
 from .api import auth as auth_api
 from .api import parent as parent_api
@@ -55,6 +56,7 @@ class AppContainer:
     voice: VoiceService
     session_events: SessionEventStore
     jobs: BackgroundJobService
+    trajectory_exporter: TrajectoryExporter
 
 
 def build_container(config: AppConfig | None = None) -> AppContainer:
@@ -77,6 +79,7 @@ def build_container(config: AppConfig | None = None) -> AppContainer:
     voice = VoiceService(voice_store, character_store)
     session_events = SessionEventStore(c.db_path)
     jobs = BackgroundJobService(c.db_path)
+    trajectory_exporter = TrajectoryExporter()
     return AppContainer(
         cfg=c,
         account_store=account_store,
@@ -92,6 +95,7 @@ def build_container(config: AppConfig | None = None) -> AppContainer:
         voice=voice,
         session_events=session_events,
         jobs=jobs,
+        trajectory_exporter=trajectory_exporter,
     )
 
 
@@ -129,6 +133,7 @@ _voice_store = _container.voice_store
 _voice = _container.voice
 _session_events = _container.session_events
 _jobs = _container.jobs
+_trajectory_exporter = _container.trajectory_exporter
 auth_api.bind(_account_store)
 parent_api.bind(_memory_store, _signals, _usage_store, cfg.ark_price_per_mtoken, _character, _voice, _care)
 elder_api.bind(_memory_store, _character, _care)
@@ -171,12 +176,23 @@ async def _check_credentials() -> None:
         )
 
 
-def _on_session_end(elder_id: str):
+def _on_session_end(elder_id: str, session_id: str):
     """会话结束钩子：异步触发蒸馏 + 信号生成，立即返回不阻塞（PRD 8.2 解耦）。"""
 
     async def _handler(transcript: list) -> None:
         _jobs.submit(elder_id, "memory_distill", lambda: _memory.distill(elder_id, transcript))
         _jobs.submit(elder_id, "signal_generate", lambda: _signals.generate(elder_id, transcript))
+        if _trajectory_exporter.enabled:
+            _jobs.submit(
+                elder_id,
+                "trajectory_export",
+                lambda: _trajectory_exporter.export(
+                    elder_id=elder_id,
+                    session_id=session_id,
+                    transcript=transcript,
+                    engine=cfg.engine,
+                ),
+            )
 
     return _handler
 
@@ -237,7 +253,7 @@ async def elder_ws(ws: WebSocket, elder_id: str) -> None:
         client_send=client_send,
         context_provider=_build_context_with_persona(elder_id),
         on_turn_text=None,
-        on_session_end=_on_session_end(elder_id),
+        on_session_end=_on_session_end(elder_id, session_id),
         speaker_provider=_speaker_provider_for(elder_id),
     )
 
