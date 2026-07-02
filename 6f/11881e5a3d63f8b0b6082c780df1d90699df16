@@ -1,0 +1,27 @@
+.learnings/FEATURE_REQUESTS.md
+  s_be289539ea207c::t_018be11f3012c9 1-5
+.learnings/LEARNINGS.md
+  s_be289539ea207c::t_4f82a0759b9885 1-7
+.learnings/ERRORS.md
+  s_be289539ea207c::t_ab0b451ef8259a 35-63
+  s_be289539ea207c::t_8e69936b5c9c0c 1-34
+  s_be289539ea207c::t_c06f4ceb9c3df6 64-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6f11881e5a3d63f8b0b6082c780df1d90699df16",
+  "prompts": {},
+  "sessions": {
+    "s_be289539ea207c": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a4343a010dcb89eb999d8a4",
+        "model": "gpt-5.5__max"
+      },
+      "human_author": "AY-kkk <AY-kkk@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
